@@ -1,0 +1,8 @@
+# This patch adds a directive for cert-manager to inject CA into the webhook config so the
+# API server trusts the webhook's serving certificate.
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  annotations:
+    cert-manager.io/inject-ca-from: $(CERTIFICATE_NAMESPACE)/$(CERTIFICATE_NAME)
+  name: mutating-webhook-configuration

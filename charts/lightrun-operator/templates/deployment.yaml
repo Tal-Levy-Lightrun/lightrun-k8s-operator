@@ -35,6 +35,17 @@ spec:
         {{- if .Values.managerConfig.profiler.bindAddress }}
         - --pprof-bind-address={{ .Values.managerConfig.profiler.bindAddress }}
         {{- end }}
+        {{- if .Values.webhook.enabled }}
+        - --webhook-enabled=true
+        - --webhook-port={{ .Values.webhook.port }}
+        - --webhook-cert-dir={{ .Values.webhook.certDir }}
+        - --webhook-shared-volume-name={{ .Values.webhook.injection.sharedVolumeName }}
+        - --webhook-shared-volume-mount-path={{ .Values.webhook.injection.sharedVolumeMountPath }}
+        - --webhook-init-container-image={{ .Values.webhook.injection.initContainerImage.repository }}:{{ .Values.webhook.injection.initContainerImage.tag }}
+        {{- if .Values.webhook.injection.initContainerImage.pullPolicy }}
+        - --webhook-init-container-image-pull-policy={{ .Values.webhook.injection.initContainerImage.pullPolicy }}
+        {{- end }}
+        {{- end }}
         command:
         - /manager
         image: {{ .Values.controllerManager.manager.image.repository }}:{{ .Values.controllerManager.manager.image.tag | default .Chart.AppVersion }}
@@ -42,6 +53,12 @@ spec:
         env:
         - name: WATCH_NAMESPACE
           value: {{ range .Values.managerConfig.operatorScope.namespaces  }}{{ . }},{{ end }}
+        {{- end }}
+        {{- if .Values.webhook.enabled }}
+        ports:
+        - containerPort: {{ .Values.webhook.port }}
+          name: webhook-server
+          protocol: TCP
         {{- end }}
         livenessProbe:
           httpGet:
@@ -62,6 +79,12 @@ spec:
           capabilities:
             drop:
               - "ALL"
+        {{- if .Values.webhook.enabled }}
+        volumeMounts:
+        - mountPath: {{ .Values.webhook.certDir }}
+          name: webhook-cert
+          readOnly: true
+        {{- end }}
       securityContext:
         runAsNonRoot: true
         seccompProfile: #require kube version 1.19+
@@ -79,4 +102,11 @@ spec:
       {{- if .Values.controllerManager.manager.nodeSelector }}
       nodeSelector:
 {{ toYaml .Values.controllerManager.manager.nodeSelector | indent 8 }}
+      {{- end }}
+      {{- if .Values.webhook.enabled }}
+      volumes:
+      - name: webhook-cert
+        secret:
+          defaultMode: 420
+          secretName: {{ if .Values.webhook.certManager.enabled }}{{ include "chart.fullname" . }}-webhook-server-cert{{ else }}{{ required "webhook.certSecretName is required when webhook.certManager.enabled is false" .Values.webhook.certSecretName }}{{ end }}
       {{- end }}

@@ -21,6 +21,14 @@
 - apiGroups:
     - agents.lightrun.com
   resources:
+    - agentpools
+  verbs:
+    - get
+    - list
+    - watch
+- apiGroups:
+    - agents.lightrun.com
+  resources:
     - lightrunjavaagents
   verbs:
     - create

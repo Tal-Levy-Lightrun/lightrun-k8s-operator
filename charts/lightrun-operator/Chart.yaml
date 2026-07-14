@@ -31,20 +31,24 @@ annotations:
       name: lightrunjavaagent
       shortName: lrja
       description: Custom resource describing Lightrun agent version, configuration and deployment that will be patched. Dependend on secret with few Lightrun key
+    - kind: AgentPool
+      version: v1beta
+      name: agentpool
+      description: Namespaced custom resource referencing a Secret with Lightrun agent-pool credentials and the server hostname; pods reference it by name via the lightrun.com/agent-pool annotation so the pod-mutating webhook can inject the Lightrun agent.
   artifacthub.io/crdsExamples: |
     - apiVersion: agents.lightrun.com/v1beta
       kind: LightrunJavaAgent
       metadata:
-        name: example-cr 
+        name: example-cr
       spec:
         workloadName: sample-deployment
         workloadType: Deployment
         containerSelector:
           - app
-        secretName: lightrun-secrets 
+        secretName: lightrun-secrets
         serverHostname: app.lightrun.com
         agentEnvVarName: JAVA_TOOL_OPTIONS
-        initContainer:  
+        initContainer:
           image: "lightruncom/k8s-operator-init-java-agent-linux:latest"
           sharedVolumeName: lightrun-agent-init
           sharedVolumeMountPath: "/lightrun"
@@ -52,6 +56,14 @@ annotations:
           - operator
           - example
           - 1.8.3
+    - apiVersion: agents.lightrun.com/v1beta
+      kind: AgentPool
+      metadata:
+        name: example-pool
+      spec:
+        secretRef:
+          name: lightrun-secrets
+        serverHostname: app.lightrun.com
 
   artifacthub.io/license: Apache-2.0
   artifacthub.io/links: |

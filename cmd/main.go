@@ -28,6 +28,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	zaplog "go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -35,9 +36,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	agentsv1beta "github.com/lightrun-platform/lightrun-k8s-operator/api/v1beta"
 	"github.com/lightrun-platform/lightrun-k8s-operator/internal/controller"
+	lightrunwebhook "github.com/lightrun-platform/lightrun-k8s-operator/internal/webhook"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	//+kubebuilder:scaffold:imports
 )
@@ -75,12 +78,35 @@ func main() {
 	var probeAddr string
 	var pprofAddr string
 	var enableLeaderElection bool
+	var webhookEnabled bool
+	var webhookPort int
+	var webhookCertDir string
+	var webhookSharedVolumeName string
+	var webhookSharedVolumeMountPath string
+	var webhookInitContainerImage string
+	var webhookInitContainerImagePullPolicy string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.StringVar(&pprofAddr, "pprof-bind-address", "0", "The address the pprof endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&webhookEnabled, "webhook-enabled", false,
+		"Enable the pod-mutating admission webhook. When false (the default), no webhook server is "+
+			"started and SetupWebhookWithManager is never called -- required so a default install "+
+			"(webhook.enabled=false in the Helm chart, no TLS cert volume mounted) doesn't crash-loop "+
+			"trying to watch a nonexistent cert directory.")
+	flag.IntVar(&webhookPort, "webhook-port", 9443, "The port the pod-mutating webhook server binds to.")
+	flag.StringVar(&webhookCertDir, "webhook-cert-dir", "/tmp/k8s-webhook-server/serving-certs",
+		"The directory containing the webhook server's TLS certificate (tls.crt) and key (tls.key).")
+	flag.StringVar(&webhookSharedVolumeName, "webhook-shared-volume-name", "lightrun-agent",
+		"Name of the emptyDir volume the pod-mutating webhook shares between the lightrun-installer init container and the patched app containers.")
+	flag.StringVar(&webhookSharedVolumeMountPath, "webhook-shared-volume-mount-path", "/lightrun",
+		"Mount path of the shared agent volume inside the patched app containers.")
+	flag.StringVar(&webhookInitContainerImage, "webhook-init-container-image", "lightruncom/k8s-operator-init-java-agent-linux:latest",
+		"Image used for the lightrun-installer init container injected by the pod-mutating webhook.")
+	flag.StringVar(&webhookInitContainerImagePullPolicy, "webhook-init-container-image-pull-policy", "",
+		"Image pull policy for the lightrun-installer init container. Empty uses the cluster default.")
 
 	opts := zap.Options{
 		Development:     false,
@@ -115,6 +141,13 @@ func main() {
 		// LeaderElectionReleaseOnCancel: true,
 	}
 
+	if webhookEnabled {
+		options.WebhookServer = webhook.NewServer(webhook.Options{
+			Port:    webhookPort,
+			CertDir: webhookCertDir,
+		})
+	}
+
 	watchNamespaces, err := getWatchNamespaces()
 	if err != nil {
 		setupLog.Info("Controller will watch and manage resources in all namespaces")
@@ -140,6 +173,20 @@ func main() {
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "LightrunJavaAgent")
 		os.Exit(1)
+	}
+
+	if webhookEnabled {
+		if err = lightrunwebhook.SetupWebhookWithManager(mgr, lightrunwebhook.Config{
+			SharedVolumeName:             webhookSharedVolumeName,
+			SharedVolumeMountPath:        webhookSharedVolumeMountPath,
+			InitContainerImage:           webhookInitContainerImage,
+			InitContainerImagePullPolicy: corev1.PullPolicy(webhookInitContainerImagePullPolicy),
+		}); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "Pod")
+			os.Exit(1)
+		}
+	} else {
+		setupLog.Info("Pod-mutating webhook disabled (--webhook-enabled=false)")
 	}
 	//+kubebuilder:scaffold:builder
 

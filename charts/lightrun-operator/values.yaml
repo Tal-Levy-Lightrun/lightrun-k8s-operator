@@ -88,6 +88,45 @@ managerConfig:
       - default
     namespacedScope: false
 
+# -- Pod-mutating admission webhook that injects the Lightrun Java agent into annotated Pods,
+# replacing the CR/controller-based patching mechanism. Additive today: the old CRD/controller
+# keep running side by side until the webhook path is validated end-to-end.
+webhook:
+  # -- Set to true to enable the mutating webhook, its Service, and (if webhook.certManager.enabled)
+  # the cert-manager Issuer/Certificate used for its TLS serving cert.
+  enabled: false
+  # -- Port the webhook server listens on inside the manager container.
+  port: 9443
+  # -- Directory the webhook server reads its TLS serving cert (tls.crt/tls.key) from.
+  certDir: /tmp/k8s-webhook-server/serving-certs
+  # -- Admission FailurePolicy for the Pod mutating webhook. "Ignore" means webhook unavailability
+  # must not block Pod scheduling; "Fail" would block all Pod creates cluster-wide if the webhook
+  # is down, which is generally too risky for a cluster-wide Pod webhook.
+  failurePolicy: Ignore
+  certManager:
+    # -- Use cert-manager (selfSigned Issuer + Certificate) to bootstrap the webhook's TLS serving
+    # cert. Requires cert-manager to be installed in the cluster. If false, you must set
+    # webhook.certSecretName to a Secret you provision yourself (tls.crt/tls.key) and
+    # webhook.caBundle to its PEM-encoded CA bundle.
+    enabled: true
+  # -- Name of a pre-existing Secret (tls.crt/tls.key) to use as the webhook's serving cert when
+  # webhook.certManager.enabled is false. Ignored otherwise.
+  certSecretName: ""
+  # -- PEM-encoded CA bundle used to verify the webhook's serving cert when
+  # webhook.certManager.enabled is false. Ignored otherwise (cert-manager injects the CA bundle
+  # via the cert-manager.io/inject-ca-from annotation instead).
+  caBundle: ""
+  # -- Defaults for the Java agent injection mechanics; mirrors the old LightrunJavaAgent CR's
+  # initContainer/sharedVolume fields, now operator-wide instead of per-CR.
+  injection:
+    sharedVolumeName: lightrun-agent
+    sharedVolumeMountPath: /lightrun
+    initContainerImage:
+      repository: lightruncom/k8s-operator-init-java-agent-linux
+      tag: latest
+      # -- Empty uses the cluster default image pull policy.
+      pullPolicy: ""
+
 # -- Metrics service for prometheus compatible poller
 metricsService:
   ports:

@@ -18,6 +18,7 @@ Table of contents
    * [Description](#description)
    * [Example](#example)
    * [Example with Helm Chart](#example-with-helm-chart)
+   * [Pod-Mutating Webhook (New)](#pod-mutating-webhook-new)
    * [High Availability](#high-availability)
    * [Limitations](#limitations)
    * [Contributing Guide ](#contributing-guide)
@@ -164,6 +165,10 @@ A [Helm chart](../charts/lightrun-operator/) is available in the repository bran
 ### Version Compatibility
 
 For simplicity, we maintain the same version for both the controller image and the Helm chart. This ensures alignment between controller actions and CRDs, preventing resource validation errors.
+
+## Pod-Mutating Webhook (New)
+
+The operator now also supports a **pod-mutating admission webhook** as an alternative to the CR-based flow described above: instead of creating a `LightrunJavaAgent` CR per workload, you annotate a Pod (or its owning Deployment/StatefulSet's Pod template) with `lightrun.com/*` annotations and reference a namespaced `AgentPool` CR for credentials/server hostname. The webhook injects the agent at pod-creation time — no reconcile loop, no patching of existing workloads. It is disabled by default (`webhook.enabled: false`) and runs alongside the existing `LightrunJavaAgent` mechanism without disabling it. See [custom_resource.md](custom_resource.md#agentpool-crd-and-pod-annotations-current-recommended) and [how.md](how.md) for the full contract, and the [operator chart README](../charts/lightrun-operator/README.md) for the `webhook.*` Helm values (including the cert-manager prerequisite).
 
 ## High Availability
 

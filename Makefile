@@ -167,13 +167,20 @@ post-commit-hook:  ## Create git post-commit hook to generate crd.
 
 
 .PHONY: deploy-to-file
+# NOTE: config/default unconditionally includes config/webhook + config/certmanager (kustomize
+# has no Helm-style values/conditionals), so config/samples/operator.yaml always bakes in an
+# enabled webhook + cert-manager Issuer/Certificate. This is the plain kubebuilder kustomize
+# scaffold for local dev/testing, not a user-facing install artifact -- it is not linked from
+# any docs. The actual documented default-install example is examples/operator.yaml below,
+# rendered from the Helm chart's real defaults (webhook.enabled=false), which must stay
+# consistent with charts/lightrun-operator/values.yaml.
 deploy-to-file: manifests kustomize ## Prepare all manifests in 1 file.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMAGE_TAG_BASE}:latest
 	$(KUSTOMIZE) build config/default --output config/samples/operator.yaml
 
 .PHONY: before-push
 before-push: manifests generate kustomize fmt vet deploy-to-file
-	$(KUSTOMIZE) build config/crd --output charts/lightrun-operator/crds/lightrunjavaagent_crd.yaml
+	$(KUSTOMIZE) build config/crd --output charts/lightrun-operator/crds/crds.yaml
 	$(KUSTOMIZE) build config/rbac | yq 'select(.metadata.name == "leader-election-role").rules' > charts/lightrun-operator/generated/rbac_leader_election_rules.yaml
 	$(KUSTOMIZE) build config/rbac | yq 'select(.metadata.name == "manager-role").rules' > charts/lightrun-operator/generated/rbac_manager_rules.yaml
 	helm template ./charts/lightrun-operator > examples/operator.yaml --include-crds --namespace lightrun-operator

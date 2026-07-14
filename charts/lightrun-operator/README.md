@@ -14,6 +14,23 @@ Kubernetes: `>= 1.19.0`
 Custom Resource of the operator is strictly depends on the secret with `lightrun_key` and `pinned_cert_hash` values  
 [Example](https://github.com/lightrun-platform/lightrun-k8s-operator/tree/main/examples/lightrunjavaagent.yaml#L56)
 
+If you enable the pod-mutating webhook (`webhook.enabled: true`) with the default
+`webhook.certManager.enabled: true`, **cert-manager must already be installed in the cluster** —
+this chart does not install cert-manager itself, it only creates a cert-manager `Issuer`/
+`Certificate` to bootstrap the webhook's TLS serving cert. If you don't want to depend on
+cert-manager, set `webhook.certManager.enabled: false` and provide your own TLS secret via
+`webhook.certSecretName` and its CA bundle via `webhook.caBundle` instead.
+
+## Pod-mutating webhook
+
+Setting `webhook.enabled: true` turns on the mutating admission webhook that injects the Lightrun
+Java agent into any pod carrying `lightrun.com/*` annotations and referencing an `AgentPool` CR —
+see the [operator docs](https://github.com/lightrun-platform/lightrun-k8s-operator/tree/main/docs/custom_resource.md)
+for the full annotation contract, and [how.md](https://github.com/lightrun-platform/lightrun-k8s-operator/tree/main/docs/how.md)
+for how this compares to the legacy `LightrunJavaAgent` CR/controller mechanism, which keeps
+working unchanged whether or not the webhook is enabled. The webhook is disabled by default so
+existing installs are unaffected by upgrading.
+
 ## Installation  
 - Add the repo to your Helm repository list
 ```sh 
@@ -66,6 +83,20 @@ For the sake of simplicity, we are keeping the convention of the same version fo
 | managerConfig.profiler.bindAddress | string | `""` |  |
 | metricsService | object | `{"ports":[{"name":"http","port":8080,"protocol":"TCP","targetPort":8080}],"type":"ClusterIP"}` | Metrics service for prometheus compatible poller |
 | nameOverride | string | `"lightrun-k8s-operator"` |  |
+| webhook | object | `{"caBundle":"","certDir":"/tmp/k8s-webhook-server/serving-certs","certManager":{"enabled":true},"certSecretName":"","enabled":false,"failurePolicy":"Ignore","injection":{"initContainerImage":{"pullPolicy":"","repository":"lightruncom/k8s-operator-init-java-agent-linux","tag":"latest"},"sharedVolumeMountPath":"/lightrun","sharedVolumeName":"lightrun-agent"},"port":9443}` | Pod-mutating admission webhook that injects the Lightrun Java agent into annotated Pods, replacing the CR/controller-based patching mechanism. Additive today: the old CRD/controller keep running side by side until the webhook path is validated end-to-end. |
+| webhook.caBundle | string | `""` | PEM-encoded CA bundle used to verify the webhook's serving cert when webhook.certManager.enabled is false. Ignored otherwise (cert-manager injects the CA bundle via the cert-manager.io/inject-ca-from annotation instead). |
+| webhook.certDir | string | `"/tmp/k8s-webhook-server/serving-certs"` | Directory the webhook server reads its TLS serving cert (tls.crt/tls.key) from. |
+| webhook.certManager.enabled | bool | `true` | Use cert-manager (selfSigned Issuer + Certificate) to bootstrap the webhook's TLS serving cert. Requires cert-manager to be installed in the cluster. If false, you must set webhook.certSecretName to a Secret you provision yourself (tls.crt/tls.key) and webhook.caBundle to its PEM-encoded CA bundle. |
+| webhook.certSecretName | string | `""` | Name of a pre-existing Secret (tls.crt/tls.key) to use as the webhook's serving cert when webhook.certManager.enabled is false. Ignored otherwise. |
+| webhook.enabled | bool | `false` | Set to true to enable the mutating webhook, its Service, and (if webhook.certManager.enabled) the cert-manager Issuer/Certificate used for its TLS serving cert. |
+| webhook.failurePolicy | string | `"Ignore"` | Admission FailurePolicy for the Pod mutating webhook. "Ignore" means webhook unavailability must not block Pod scheduling; "Fail" would block all Pod creates cluster-wide if the webhook is down, which is generally too risky for a cluster-wide Pod webhook. |
+| webhook.injection | object | `{"initContainerImage":{"pullPolicy":"","repository":"lightruncom/k8s-operator-init-java-agent-linux","tag":"latest"},"sharedVolumeMountPath":"/lightrun","sharedVolumeName":"lightrun-agent"}` | Defaults for the Java agent injection mechanics; mirrors the old LightrunJavaAgent CR's initContainer/sharedVolume fields, now operator-wide instead of per-CR. |
+| webhook.injection.initContainerImage.pullPolicy | string | `""` | Empty uses the cluster default image pull policy. |
+| webhook.injection.initContainerImage.repository | string | `"lightruncom/k8s-operator-init-java-agent-linux"` |  |
+| webhook.injection.initContainerImage.tag | string | `"latest"` |  |
+| webhook.injection.sharedVolumeMountPath | string | `"/lightrun"` |  |
+| webhook.injection.sharedVolumeName | string | `"lightrun-agent"` |  |
+| webhook.port | int | `9443` | Port the webhook server listens on inside the manager container. |
 
 ----------------------------------------------
 Autogenerated from chart metadata using [helm-docs v1.14.2](https://github.com/norwoodj/helm-docs/releases/v1.14.2)
