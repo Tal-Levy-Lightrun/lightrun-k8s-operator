@@ -4,6 +4,7 @@
 resources:
 - bases/agents.lightrun.com_lightrunjavaagents.yaml
 - bases/agents.lightrun.com_agentpools.yaml
+- bases/agents.lightrun.com_clusteragentpools.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patches: []

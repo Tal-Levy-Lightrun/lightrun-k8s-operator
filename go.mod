@@ -15,7 +15,10 @@ require (
 	sigs.k8s.io/controller-runtime v0.17.0
 )
 
-require k8s.io/utils v0.0.0-20230726121419-3b25d923346b
+require (
+	github.com/open-policy-agent/cert-controller v0.10.1
+	k8s.io/utils v0.0.0-20230726121419-3b25d923346b
+)
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -51,6 +54,7 @@ require (
 	github.com/prometheus/common v0.45.0 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
+	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20220827204233-334a2380cb91 // indirect
 	golang.org/x/oauth2 v0.27.0 // indirect

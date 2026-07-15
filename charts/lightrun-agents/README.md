@@ -6,13 +6,14 @@ This Helm chart enables the deployment and management of Lightrun Agents as cust
 > resources (plus their credential `Secret`s), which the operator's controller reconciles by
 > patching a named Deployment/StatefulSet. This is the **legacy** mechanism. The operator also
 > supports a newer, recommended mechanism: a pod-mutating admission webhook that injects the agent
-> into any pod carrying `lightrun.com/*` annotations and referencing a namespaced `AgentPool` CR —
-> see [custom_resource.md](https://github.com/lightrun-platform/lightrun-k8s-operator/blob/main/docs/custom_resource.md#agentpool-crd-and-pod-annotations-current-recommended)
+> into any pod carrying (or inheriting, at the namespace level) an `lightrun.com/inject-java`
+> annotation and resolving to an `AgentPool` (namespaced) or `ClusterAgentPool` (cluster-scoped)
+> CR — see [custom_resource.md](https://github.com/lightrun-platform/lightrun-k8s-operator/blob/main/docs/custom_resource.md#quick-start-the-zerominimal-annotation-path-recommended)
 > and [how.md](https://github.com/lightrun-platform/lightrun-k8s-operator/blob/main/docs/how.md)
-> for the full contract. This chart does not currently generate `AgentPool` CRs or Pod annotations
-> for you — if you want to use the newer mechanism, either author the `AgentPool` CR and the
-> `lightrun.com/*` Pod-template annotations yourself (following the linked docs), or continue using
-> this chart's `LightrunJavaAgent`-based flow, which remains fully supported.
+> for the full contract. This chart does not currently generate `AgentPool`/`ClusterAgentPool`
+> CRs or Pod/Namespace annotations for you — if you want to use the newer mechanism, either author
+> the pool CR and the `lightrun.com/*` annotations yourself (following the linked docs), or
+> continue using this chart's `LightrunJavaAgent`-based flow, which remains fully supported.
 
 ## Prerequisites
 

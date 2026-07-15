@@ -18,36 +18,9 @@
     - create
     - patch
 - apiGroups:
-    - ""
-  resources:
-    - namespaces
-  verbs:
-    - get
-- apiGroups:
-    - ""
-  resources:
-    - secrets
-  verbs:
-    - create
-    - delete
-    - get
-    - list
-    - update
-    - watch
-- apiGroups:
-    - admissionregistration.k8s.io
-  resources:
-    - mutatingwebhookconfigurations
-  verbs:
-    - get
-    - list
-    - update
-    - watch
-- apiGroups:
     - agents.lightrun.com
   resources:
     - agentpools
-    - clusteragentpools
   verbs:
     - get
     - list
@@ -55,7 +28,6 @@
 - apiGroups:
     - agents.lightrun.com
   resources:
-    - clusteragentpools/status
     - lightrunjavaagents/status
   verbs:
     - get

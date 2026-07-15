@@ -5,8 +5,13 @@ metadata:
   name: {{ include "chart.fullname" . }}-manager-role-rw
   labels:
   {{- include "chart.labels" . | nindent 4 }}
+# Namespaced-resource rules only -- the always-cluster-scoped rules (Namespace,
+# MutatingWebhookConfiguration, ClusterAgentPool, and Secrets -- see manager-rbac-cluster.yaml's
+# comment for why Secrets lives there too) live in the always-rendered ClusterRole in
+# manager-rbac-cluster.yaml instead, so they're granted exactly once regardless of
+# operatorScope.namespacedScope rather than duplicated across two ClusterRoles here.
 rules:
-  {{- .Files.Get "generated/rbac_manager_rules.yaml" | nindent 2}}
+  {{- .Files.Get "generated/rbac_manager_rules_namespaced.yaml" | nindent 2}}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

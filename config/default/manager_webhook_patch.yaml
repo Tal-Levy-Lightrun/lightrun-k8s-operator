@@ -1,5 +1,5 @@
-# This patch adds the webhook server port and mounts the cert-manager-issued serving
-# certificate into the manager container.
+# This patch adds the webhook server port and mounts the self-managed (cert-controller, see
+# cmd/main.go) serving certificate into the manager container.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

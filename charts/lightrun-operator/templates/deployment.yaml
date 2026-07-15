@@ -45,6 +45,10 @@ spec:
         {{- if .Values.webhook.injection.initContainerImage.pullPolicy }}
         - --webhook-init-container-image-pull-policy={{ .Values.webhook.injection.initContainerImage.pullPolicy }}
         {{- end }}
+        - --webhook-namespace={{ .Release.Namespace }}
+        - --webhook-service-name={{ include "chart.fullname" . }}-webhook-service
+        - --webhook-cert-secret-name={{ include "chart.fullname" . }}-webhook-server-cert
+        - --webhook-mutating-webhook-configuration-name={{ include "chart.fullname" . }}-mutating-webhook-configuration
         {{- end }}
         command:
         - /manager
@@ -108,5 +112,5 @@ spec:
       - name: webhook-cert
         secret:
           defaultMode: 420
-          secretName: {{ if .Values.webhook.certManager.enabled }}{{ include "chart.fullname" . }}-webhook-server-cert{{ else }}{{ required "webhook.certSecretName is required when webhook.certManager.enabled is false" .Values.webhook.certSecretName }}{{ end }}
+          secretName: {{ include "chart.fullname" . }}-webhook-server-cert
       {{- end }}

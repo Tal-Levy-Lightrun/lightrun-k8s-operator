@@ -4,15 +4,15 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.16.5
-  name: agentpools.agents.lightrun.com
+  name: clusteragentpools.agents.lightrun.com
 spec:
   group: agents.lightrun.com
   names:
-    kind: AgentPool
-    listKind: AgentPoolList
-    plural: agentpools
-    singular: agentpool
-  scope: Namespaced
+    kind: ClusterAgentPool
+    listKind: ClusterAgentPoolList
+    plural: clusteragentpools
+    singular: clusteragentpool
+  scope: Cluster
   versions:
   - additionalPrinterColumns:
     - jsonPath: .spec.serverHostname
@@ -25,8 +25,10 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          AgentPool is the Schema for the agentpools API. It is namespace-scoped: pods reference
-          one by name (via the lightrun.com/agent-pool annotation) within their own namespace.
+          ClusterAgentPool is the Schema for the clusteragentpools API. It is cluster-scoped: pods in
+          any namespace listed in spec.allowedNamespaces may reference it (via the
+          lightrun.com/inject-java or lightrun.com/agent-pool annotation naming it, plus
+          lightrun.com/agent-pool-kind: ClusterAgentPool).
         properties:
           apiVersion:
             description: |-
@@ -46,76 +48,65 @@ spec:
           metadata:
             type: object
           spec:
-            description: AgentPoolSpec defines the desired state of AgentPool.
+            description: ClusterAgentPoolSpec defines the desired state of ClusterAgentPool.
             properties:
               agentCliFlags:
-                description: |-
-                  AgentCliFlags is the default value used when the consuming pod does not override
-                  lightrun.com/agent-cli-flags.
                 type: string
               agentConfig:
                 additionalProperties:
                   type: string
-                description: |-
-                  AgentConfig is the default value used when the consuming pod does not override
-                  lightrun.com/agent-config.
                 type: object
               agentEnvVarName:
-                description: |-
-                  AgentEnvVarName is the default env var (e.g. JAVA_TOOL_OPTIONS) the agentpath arg is
-                  appended to when the consuming pod does not override lightrun.com/agent-env-var-name.
                 type: string
               agentName:
-                description: |-
-                  AgentName is the default value used when the consuming pod does not override
-                  lightrun.com/agent-name.
                 type: string
               agentTags:
+                items:
+                  type: string
+                type: array
+              allowedNamespaces:
                 description: |-
-                  AgentTags is the default value used when the consuming pod does not override
-                  lightrun.com/agent-tags.
+                  AllowedNamespaces is the explicit allow-list of namespaces permitted to reference this
+                  ClusterAgentPool. Secure by default: empty/absent means usable by nothing. The
+                  mirroring controller also mirrors SecretRef's Secret into every namespace listed here.
                 items:
                   type: string
                 type: array
               containerSelector:
-                description: |-
-                  ContainerSelector lists the default container names to patch when the consuming pod
-                  does not override lightrun.com/container-selector.
                 items:
                   type: string
                 type: array
               secretRef:
-                description: SecretRef points at the Secret holding this pool's Lightrun
-                  credentials.
+                description: SecretRef points at the source Secret this pool's credentials
+                  are mirrored from.
                 properties:
                   name:
-                    description: Name of the Secret in the same namespace as this
-                      AgentPool.
+                    description: Name of the source Secret.
+                    minLength: 1
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace the source Secret lives in (e.g. the operator's own namespace, or a
+                      platform-team namespace) -- never a consuming pod's namespace directly.
                     minLength: 1
                     type: string
                 required:
                 - name
+                - namespace
                 type: object
               serverHostname:
-                description: |-
-                  ServerHostname is the Lightrun server hostname used for downloading the agent; the
-                  key/company id in SecretRef's Secret must originate from this same server.
+                description: ServerHostname is the Lightrun server hostname used for
+                  downloading the agent.
                 minLength: 1
                 type: string
               useSecretsAsMountedFiles:
-                description: |-
-                  UseSecretsAsMountedFiles is the default value used when the consuming pod does not
-                  override lightrun.com/use-secrets-as-mounted-files. A *bool (rather than bool) so
-                  "unset on the pool" is distinguishable from "explicitly set to false" -- resolution
-                  falls through to the webhook's own built-in default (true) only when both the pod
-                  annotation is absent AND this is nil.
                 type: boolean
             required:
             - secretRef
             - serverHostname
             type: object
           status:
-            description: AgentPoolStatus defines the observed state of AgentPool.
+            description: ClusterAgentPoolStatus defines the observed state of ClusterAgentPool.
             properties:
               conditions:
                 items:
