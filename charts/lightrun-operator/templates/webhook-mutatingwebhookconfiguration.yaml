@@ -1,0 +1,35 @@
+{{- if .Values.webhook.enabled }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ include "chart.fullname" . }}-mutating-webhook-configuration
+  labels:
+  {{- include "chart.labels" . | nindent 4 }}
+webhooks:
+  # Intercepts every Pod create cluster-wide: the annotation-driven contract (lightrun.com/agent-type
+  # etc.) can't be expressed via this webhook's own object/namespace selectors, so the handler itself
+  # no-ops for Pods that don't carry a recognized lightrun.com/agent-type annotation.
+  #
+  # caBundle is intentionally omitted here: the operator's own cert-controller-based CertRotator
+  # (cmd/main.go) patches it directly via the API once its self-managed cert is ready -- no
+  # cert-manager CA-injection annotation needed.
+  - name: mpod.lightrun.com
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    clientConfig:
+      service:
+        name: {{ include "chart.fullname" . }}-webhook-service
+        namespace: {{ .Release.Namespace }}
+        path: /mutate--v1-pod
+    rules:
+      - apiGroups:
+          - ""
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+        resources:
+          - pods
+{{- end }}

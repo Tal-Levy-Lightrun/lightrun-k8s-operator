@@ -14,6 +14,46 @@ Kubernetes: `>= 1.19.0`
 Custom Resource of the operator is strictly depends on the secret with `lightrun_key` and `pinned_cert_hash` values  
 [Example](https://github.com/lightrun-platform/lightrun-k8s-operator/tree/main/examples/lightrunjavaagent.yaml#L56)
 
+The pod-mutating webhook (`webhook.enabled: true`) has **zero external prerequisites**: its TLS
+serving certificate is fully self-managed at runtime by
+[`open-policy-agent/cert-controller`](https://github.com/open-policy-agent/cert-controller) (the
+same library [Gatekeeper](https://github.com/open-policy-agent/gatekeeper) uses) — it mints a
+self-signed CA, rotates the serving cert, and keeps the `MutatingWebhookConfiguration`'s
+`caBundle` patched, all as a normal controller running alongside the rest of the operator.
+cert-manager (or any other external cert bootstrap) is not required, does not need to be
+installed, and this chart no longer creates or references one.
+
+## Pod-mutating webhook
+
+Setting `webhook.enabled: true` turns on the mutating admission webhook that injects the Lightrun
+Java agent into any pod carrying `lightrun.com/*` annotations (or inheriting a namespace-level
+default — see below) and referencing an `AgentPool` (namespaced) or `ClusterAgentPool`
+(cluster-scoped, for sharing across namespaces) CR — see the
+[operator docs](https://github.com/lightrun-platform/lightrun-k8s-operator/tree/main/docs/custom_resource.md)
+for the full annotation contract, and [how.md](https://github.com/lightrun-platform/lightrun-k8s-operator/tree/main/docs/how.md)
+for how this compares to the legacy `LightrunJavaAgent` CR/controller mechanism, which keeps
+working unchanged whether or not the webhook is enabled. The webhook is disabled by default so
+existing installs are unaffected by upgrading.
+
+The recommended pattern needs **zero or one annotation per pod**: create one `AgentPool`/
+`ClusterAgentPool` named `default` and set `lightrun.com/inject-java: "true"` on the Namespace
+object once — every pod created in that namespace afterward inherits it automatically. See the
+[quick start](https://github.com/lightrun-platform/lightrun-k8s-operator/tree/main/docs/custom_resource.md#quick-start-the-zerominimal-annotation-path-recommended)
+for the full walkthrough.
+
+### `namespacedScope` and the webhook/`ClusterAgentPool` RBAC
+
+`managerConfig.operatorScope.namespacedScope: true` scopes the operator's `Deployment`/
+`StatefulSet`/`LightrunJavaAgent`/`AgentPool` RBAC down to `operatorScope.namespaces`. It does
+**not** scope down anything cluster-inherently-scoped: `Namespace` reads (for the webhook's
+namespace-level default lookup), `MutatingWebhookConfiguration` updates (for cert rotation),
+`ClusterAgentPool` access, and `Secret` access (needed cluster-wide both by the
+`ClusterAgentPool` secret-mirroring controller, which can mirror into any `allowedNamespaces`
+regardless of the watch-namespace list, and by the cert-rotation controller, which must always
+reach its own cert Secret in the operator's own namespace) are **always granted cluster-wide**,
+by design, regardless of `namespacedScope` — these are inherently cluster-wide operations that
+can't be meaningfully namespace-scoped.
+
 ## Installation  
 - Add the repo to your Helm repository list
 ```sh 
@@ -66,6 +106,17 @@ For the sake of simplicity, we are keeping the convention of the same version fo
 | managerConfig.profiler.bindAddress | string | `""` |  |
 | metricsService | object | `{"ports":[{"name":"http","port":8080,"protocol":"TCP","targetPort":8080}],"type":"ClusterIP"}` | Metrics service for prometheus compatible poller |
 | nameOverride | string | `"lightrun-k8s-operator"` |  |
+| webhook | object | `{"certDir":"/tmp/k8s-webhook-server/serving-certs","enabled":false,"failurePolicy":"Ignore","injection":{"initContainerImage":{"pullPolicy":"","repository":"lightruncom/k8s-operator-init-java-agent-linux","tag":"latest"},"sharedVolumeMountPath":"/lightrun","sharedVolumeName":"lightrun-agent"},"port":9443}` | Pod-mutating admission webhook that injects the Lightrun Java agent into annotated Pods, replacing the CR/controller-based patching mechanism. Additive today: the old CRD/controller keep running side by side until the webhook path is validated end-to-end. The webhook's TLS serving cert is fully self-managed by the operator at runtime (open-policy-agent/cert-controller) — no cert-manager or other external prerequisite needed. |
+| webhook.certDir | string | `"/tmp/k8s-webhook-server/serving-certs"` | Directory the webhook server reads its TLS serving cert (tls.crt/tls.key) from; also where the self-managed CertRotator writes it. |
+| webhook.enabled | bool | `false` | Set to true to enable the mutating webhook, its Service, its self-managed TLS cert Secret, and its cert-rotation controller. There is exactly one TLS bootstrap mode — no cert-manager toggle, no manual cert/caBundle escape hatch. |
+| webhook.failurePolicy | string | `"Ignore"` | Admission FailurePolicy for the Pod mutating webhook. "Ignore" means webhook unavailability must not block Pod scheduling; "Fail" would block all Pod creates cluster-wide if the webhook is down, which is generally too risky for a cluster-wide Pod webhook. |
+| webhook.injection | object | `{"initContainerImage":{"pullPolicy":"","repository":"lightruncom/k8s-operator-init-java-agent-linux","tag":"latest"},"sharedVolumeMountPath":"/lightrun","sharedVolumeName":"lightrun-agent"}` | Defaults for the Java agent injection mechanics; mirrors the old LightrunJavaAgent CR's initContainer/sharedVolume fields, now operator-wide instead of per-CR. |
+| webhook.injection.initContainerImage.pullPolicy | string | `""` | Empty uses the cluster default image pull policy. |
+| webhook.injection.initContainerImage.repository | string | `"lightruncom/k8s-operator-init-java-agent-linux"` |  |
+| webhook.injection.initContainerImage.tag | string | `"latest"` |  |
+| webhook.injection.sharedVolumeMountPath | string | `"/lightrun"` |  |
+| webhook.injection.sharedVolumeName | string | `"lightrun-agent"` |  |
+| webhook.port | int | `9443` | Port the webhook server listens on inside the manager container. |
 
 ----------------------------------------------
 Autogenerated from chart metadata using [helm-docs v1.14.2](https://github.com/norwoodj/helm-docs/releases/v1.14.2)

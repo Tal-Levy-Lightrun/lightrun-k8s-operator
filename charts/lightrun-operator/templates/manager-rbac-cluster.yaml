@@ -1,0 +1,41 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "chart.fullname" . }}-manager-role-cluster
+  labels:
+  {{- include "chart.labels" . | nindent 4 }}
+# Always cluster-scoped, rendered regardless of managerConfig.operatorScope.namespacedScope --
+# unlike the namespaced-resource rules (manager-rbac.yaml / manager-rbac-namespaced.yaml,
+# conditional on namespacedScope), these rules cover two cases a namespacedScope=true install
+# must never gate behind operatorScope.namespaces:
+#   - Namespace/MutatingWebhookConfiguration/ClusterAgentPool are always cluster-scoped types --
+#     a namespaced Role can never grant access to them at all (baking them into the
+#     namespacedScope=true Role was a no-op that silently 403'd, since RBAC never honors a
+#     namespaced Role's rules for a cluster-scoped resource).
+#   - Secret access is inherently cluster-wide by controller design, not just "possible to scope
+#     narrower": ClusterAgentPoolSecretMirror controller mirrors an arbitrary
+#     ClusterAgentPool.spec.secretRef.namespace into an arbitrary spec.allowedNamespaces list,
+#     and cert-controller's CertRotator must always reach its own webhook cert Secret in the
+#     operator's own namespace. Making secrets namespacedScope-conditional was a live-reproduced
+#     bug: if the operator's own namespace wasn't listed in operatorScope.namespaces, CertRotator's
+#     Secret watch 403'd and never synced (silently blocking the webhook forever, masked by
+#     failurePolicy=Ignore), and ClusterAgentPool mirroring 403'd for any allowedNamespaces outside
+#     the configured watch list.
+# See generated/rbac_manager_rules_cluster.yaml's derivation in the Makefile's before-push target.
+rules:
+  {{- .Files.Get "generated/rbac_manager_rules_cluster.yaml" | nindent 2}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "chart.fullname" . }}-manager-rolebinding-cluster
+  labels:
+  {{- include "chart.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: '{{ include "chart.fullname" . }}-manager-role-cluster'
+subjects:
+- kind: ServiceAccount
+  name: '{{ include "chart.fullname" . }}-controller-manager'
+  namespace: '{{ .Release.Namespace }}'

@@ -167,15 +167,50 @@ post-commit-hook:  ## Create git post-commit hook to generate crd.
 
 
 .PHONY: deploy-to-file
+# NOTE: config/default unconditionally includes config/webhook + config/certmanager (kustomize
+# has no Helm-style values/conditionals), so config/samples/operator.yaml always bakes in an
+# enabled webhook + cert-manager Issuer/Certificate. This is the plain kubebuilder kustomize
+# scaffold for local dev/testing, not a user-facing install artifact -- it is not linked from
+# any docs. The actual documented default-install example is examples/operator.yaml below,
+# rendered from the Helm chart's real defaults (webhook.enabled=false), which must stay
+# consistent with charts/lightrun-operator/values.yaml.
 deploy-to-file: manifests kustomize ## Prepare all manifests in 1 file.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMAGE_TAG_BASE}:latest
 	$(KUSTOMIZE) build config/default --output config/samples/operator.yaml
 
 .PHONY: before-push
+# rbac_manager_rules_cluster.yaml / rbac_manager_rules_namespaced.yaml split
+# rbac_manager_rules.yaml's rules by resource into "always cluster-scoped" vs. everything else
+# (namespaced-safe, used by the existing namespacedScope-conditional Role/ClusterRole split).
+# Two distinct reasons put a resource in this bucket:
+#   1. It's inherently cluster-scoped API-server-side (Namespace, MutatingWebhookConfiguration,
+#      ClusterAgentPool) -- a namespaced Role can never grant access to it at all, see
+#      charts/lightrun-operator/templates/manager-rbac-cluster.yaml.
+#   2. It's namespaced but the controller that needs it has an inherently cluster-wide access
+#      pattern by design (secrets -- clusteragentpool.SecretMirrorReconciler mirrors an
+#      arbitrary ClusterAgentPool.spec.secretRef.namespace into an arbitrary
+#      spec.allowedNamespaces list, and cert-controller's CertRotator must always reach its own
+#      webhook cert Secret in the operator's own namespace regardless of what the user lists in
+#      managerConfig.operatorScope.namespaces) -- making it namespacedScope-conditional was a
+#      live-reproduced bug: under namespacedScope=true, if the operator's own namespace wasn't
+#      explicitly listed, the ServiceAccount had no secrets RBAC there, CertRotator's Secret
+#      informer never synced (403, retried forever, no timeout), and the webhook silently never
+#      became ready (failurePolicy=Ignore masked it as "pods just don't get mutated", not a
+#      crash) -- and separately, ClusterAgentPool secret-mirroring 403'd at the cluster scope
+#      for any allowedNamespaces outside the configured watch list.
+# controller-gen has no marker to express "this rule is cluster-scoped only" (it merges
+# same-verb-set rules from separate +kubebuilder:rbac markers into one), so this list is
+# manually maintained here: update it if a future +kubebuilder:rbac marker adds another
+# cluster-scoped-only (or inherently-cluster-wide) resource.
+CLUSTER_SCOPED_ONLY_RESOURCES := "namespaces" or . == "mutatingwebhookconfigurations" or . == "clusteragentpools" or . == "clusteragentpools/status" or . == "secrets"
 before-push: manifests generate kustomize fmt vet deploy-to-file
-	$(KUSTOMIZE) build config/crd --output charts/lightrun-operator/crds/lightrunjavaagent_crd.yaml
+	$(KUSTOMIZE) build config/crd --output charts/lightrun-operator/crds/crds.yaml
 	$(KUSTOMIZE) build config/rbac | yq 'select(.metadata.name == "leader-election-role").rules' > charts/lightrun-operator/generated/rbac_leader_election_rules.yaml
 	$(KUSTOMIZE) build config/rbac | yq 'select(.metadata.name == "manager-role").rules' > charts/lightrun-operator/generated/rbac_manager_rules.yaml
+	yq '[.[] | .resources |= (map(select(. == $(CLUSTER_SCOPED_ONLY_RESOURCES))))] | map(select(.resources | length > 0))' \
+		charts/lightrun-operator/generated/rbac_manager_rules.yaml > charts/lightrun-operator/generated/rbac_manager_rules_cluster.yaml
+	yq '[.[] | .resources |= (map(select((. == $(CLUSTER_SCOPED_ONLY_RESOURCES)) | not)))] | map(select(.resources | length > 0))' \
+		charts/lightrun-operator/generated/rbac_manager_rules.yaml > charts/lightrun-operator/generated/rbac_manager_rules_namespaced.yaml
 	helm template ./charts/lightrun-operator > examples/operator.yaml --include-crds --namespace lightrun-operator
 
 ## Location to install dependencies to

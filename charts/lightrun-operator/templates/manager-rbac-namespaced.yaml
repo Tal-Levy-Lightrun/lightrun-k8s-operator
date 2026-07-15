@@ -8,8 +8,14 @@ metadata:
   labels:
   {{- include "chart.labels" $ | nindent 4 }}
   namespace: {{ . }}
+# Namespaced-resource rules only -- a namespaced Role can never grant access to cluster-scoped
+# resources (Namespace, MutatingWebhookConfiguration, ClusterAgentPool), and Secrets access is
+# deliberately kept out of this per-namespace Role too even though Secret itself is namespaced --
+# see manager-rbac-cluster.yaml's comment for why. All of those instead live in the
+# always-cluster-scoped ClusterRole in manager-rbac-cluster.yaml, rendered regardless of
+# operatorScope.namespacedScope.
 rules:
-  {{- $.Files.Get "generated/rbac_manager_rules.yaml" | nindent 2}}
+  {{- $.Files.Get "generated/rbac_manager_rules_namespaced.yaml" | nindent 2}}
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1

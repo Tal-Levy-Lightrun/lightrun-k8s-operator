@@ -19,11 +19,54 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
   - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - mutatingwebhookconfigurations
+  verbs:
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - agents.lightrun.com
+  resources:
+  - agentpools
+  - clusteragentpools
   verbs:
   - get
   - list
   - watch
+- apiGroups:
+  - agents.lightrun.com
+  resources:
+  - clusteragentpools/status
+  - lightrunjavaagents/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - agents.lightrun.com
   resources:
@@ -41,14 +84,6 @@ rules:
   resources:
   - lightrunjavaagents/finalizers
   verbs:
-  - update
-- apiGroups:
-  - agents.lightrun.com
-  resources:
-  - lightrunjavaagents/status
-  verbs:
-  - get
-  - patch
   - update
 - apiGroups:
   - apps

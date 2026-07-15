@@ -18,6 +18,7 @@ Table of contents
    * [Description](#description)
    * [Example](#example)
    * [Example with Helm Chart](#example-with-helm-chart)
+   * [Pod-Mutating Webhook (New)](#pod-mutating-webhook-new)
    * [High Availability](#high-availability)
    * [Limitations](#limitations)
    * [Contributing Guide ](#contributing-guide)
@@ -164,6 +165,10 @@ A [Helm chart](../charts/lightrun-operator/) is available in the repository bran
 ### Version Compatibility
 
 For simplicity, we maintain the same version for both the controller image and the Helm chart. This ensures alignment between controller actions and CRDs, preventing resource validation errors.
+
+## Pod-Mutating Webhook (New)
+
+The operator now also supports a **pod-mutating admission webhook** as an alternative to the CR-based flow described above: instead of creating a `LightrunJavaAgent` CR per workload, you create an `AgentPool` (namespaced) or `ClusterAgentPool` (cluster-scoped, for sharing across namespaces) CR holding the shared config/credentials, and opt pods in via the `lightrun.com/inject-java` annotation — either directly on a Pod (or its owning Deployment/StatefulSet's Pod template), or once on the Namespace object as a default every pod in that namespace inherits. In the common case this needs **zero or one annotation per pod**, not a flat set of required annotations — see the [quick start](custom_resource.md#quick-start-the-zerominimal-annotation-path-recommended). The webhook injects the agent at pod-creation time — no reconcile loop, no patching of existing workloads. It is disabled by default (`webhook.enabled: false`) and runs alongside the existing `LightrunJavaAgent` mechanism without disabling it. Its TLS serving cert is fully self-managed at runtime (`open-policy-agent/cert-controller`) — no cert-manager or other external prerequisite needed. See [custom_resource.md](custom_resource.md#quick-start-the-zerominimal-annotation-path-recommended) and [how.md](how.md) for the full contract, and the [operator chart README](../charts/lightrun-operator/README.md) for the `webhook.*` Helm values.
 
 ## High Availability
 
