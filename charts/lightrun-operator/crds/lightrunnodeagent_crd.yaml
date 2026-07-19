@@ -3,16 +3,16 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.16.5
-  name: lightrunjavaagents.agents.lightrun.com
+  name: lightrunnodeagents.agents.lightrun.com
 spec:
   group: agents.lightrun.com
   names:
-    kind: LightrunJavaAgent
-    listKind: LightrunJavaAgentList
-    plural: lightrunjavaagents
+    kind: LightrunNodeAgent
+    listKind: LightrunNodeAgentList
+    plural: lightrunnodeagents
     shortNames:
-      - lrja
-    singular: lightrunjavaagent
+      - lrna
+    singular: lightrunnodeagent
   scope: Namespaced
   versions:
     - additionalPrinterColumns:
@@ -34,7 +34,7 @@ spec:
       name: v1beta
       schema:
         openAPIV3Schema:
-          description: LightrunJavaAgent is the Schema for the lightrunjavaagents API
+          description: LightrunNodeAgent is the Schema for the lightrunnodeagents API
           properties:
             apiVersion:
               description: |-
@@ -54,26 +54,22 @@ spec:
             metadata:
               type: object
             spec:
-              description: LightrunJavaAgentSpec defines the desired state of LightrunJavaAgent
+              description: LightrunNodeAgentSpec defines the desired state of LightrunNodeAgent
               properties:
                 agentCliFlags:
                   description: |-
-                    Add cli flags to the agent "-agentpath:/lightrun/agent/lightrun_agent.so=<AgentCliFlags>"
-                    https://docs.lightrun.com/jvm/agent-configuration/#additional-command-line-flags
+                    Add cli flags to the agent. Unlike Java, these are NOT concatenated into AgentEnvVarName;
+                    they are passed to the app container via a separate LIGHTRUN_AGENT_CLI_FLAGS env var.
                   type: string
                 agentConfig:
                   additionalProperties:
                     type: string
-                  description: |-
-                    Agent configuration to be changed from default values
-                    https://docs.lightrun.com/jvm/agent-configuration/#setting-agent-properties-from-the-agentconfig-file
+                  description: Agent configuration to be changed from default values
                   type: object
                 agentEnvVarName:
                   description: |-
-                    Env variable that will be patched with the -agentpath
-                    Common choice is JAVA_TOOL_OPTIONS
-                    Depending on the tool used it may vary from JAVA_OPTS to MAVEN_OPTS and CATALINA_OPTS
-                    More info can be found here https://docs.lightrun.com/jvm/build-tools/
+                    Env variable that will be patched with the --require bootstrap path
+                    Defaults to NODE_OPTIONS
                   type: string
                 agentName:
                   description: Agent name for registration to the server
@@ -140,7 +136,7 @@ spec:
                 - workloadType
               type: object
             status:
-              description: LightrunJavaAgentStatus defines the observed state of LightrunJavaAgent
+              description: LightrunNodeAgentStatus defines the observed state of LightrunNodeAgent
               properties:
                 conditions:
                   items:

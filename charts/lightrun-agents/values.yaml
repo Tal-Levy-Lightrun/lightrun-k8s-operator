@@ -2,7 +2,37 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 javaAgents: []
+nodeAgents: []
 ## Examples
+### Node.js agent
+#- Mirrors the javaAgents shape, except agentEnvVarName defaults to NODE_OPTIONS instead of JAVA_TOOL_OPTIONS,
+#  and agentCliFlags (if set) is passed to the app container via a separate LIGHTRUN_AGENT_CLI_FLAGS
+#  env var instead of being concatenated into agentEnvVarName.
+#- When agentPoolCredentials.existingSecret is not set, the generated Secret (and the CR's secretName
+#  reference) defaults to `{{ .name }}-node-secret` -- distinct from javaAgents' `{{ .name }}-secret`
+#  default -- so a nodeAgents entry and a javaAgents entry sharing the same `.name` don't collide on
+#  the same Secret.
+
+#nodeAgents:
+#  - name: 'my-node-service-1'
+#    namespace: 'my-namespace-1'
+#    workloadName: "my-node-deployment-1"
+#    workloadType: "Deployment"  # or "StatefulSet"
+#    containerSelector:
+#      - my-container-1
+#    serverHostname: 'lightrun.example.com'
+#    useSecretsAsMountedFiles: false
+#    initContainer:
+#      image: "lightruncom/lightrun-init-agent-node:latest"
+#      imagePullPolicy: "IfNotPresent"
+#    agentPoolCredentials:
+#      existingSecret: ""
+#      apiKey: "xxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+#      pinnedCertHash: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+#    agentTags:
+#      - env-production
+#      - service-my-node-server
+
 ### Basic
 #- The `my-service-1` does not use an `existingSecret` and instead the `agentPoolCredentials.apiKey` and `agentPoolCredentials.pinnedCertHash` are provided directly.
 

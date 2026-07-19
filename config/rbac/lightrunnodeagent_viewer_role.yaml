@@ -1,0 +1,27 @@
+# permissions for end users to view lightrunnodeagents.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: lightrunnodeagent-viewer-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: lightrun-k8s-operator
+    app.kubernetes.io/part-of: lightrun-k8s-operator
+
+  name: lightrunnodeagent-viewer-role
+rules:
+- apiGroups:
+  - agents.lightrun.com
+  resources:
+  - lightrunnodeagents
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - agents.lightrun.com
+  resources:
+  - lightrunnodeagents/status
+  verbs:
+  - get

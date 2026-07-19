@@ -18,3 +18,5 @@
  - After the target resource is patched, k8s will `recreate all the pods` in the Deployment or StatefulSet. New Pods will be initialized with the Lightrun agent
  - If user deletes the `LightrunJavaAgent` CR, the Controller will roll back all the changes to the target resource. This will trigger `recreation of all pods` again
  - [High level diagram](resource_relations.excalidraw.png) of resources created/edited by the operator
+
+Both Java and Node.js applications are supported today, via the `LightrunJavaAgent` and `LightrunNodeAgent` CRs respectively. The reconcile flow above is the same for both kinds; the only differences are in which env var gets patched (`JAVA_TOOL_OPTIONS` vs `NODE_OPTIONS`) and how the agent hooks into the runtime. See [CR field reference](custom_resource.md) for the Node-specific divergences and known limitations.

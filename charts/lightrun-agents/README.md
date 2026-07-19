@@ -1,6 +1,6 @@
 # Helm Chart for Deploying Lightrun Agents
 
-This Helm chart enables the deployment and management of Lightrun Agents as custom resources within your Kubernetes cluster. Currently, only Java-based agents are supported. The LightrunJavaAgent custom resource will be configured according to the settings specified in the values.yaml file.
+This Helm chart enables the deployment and management of Lightrun Agents as custom resources within your Kubernetes cluster. Both Java-based and Node.js-based agents are supported. The LightrunJavaAgent and LightrunNodeAgent custom resources will be configured according to the settings specified in the values.yaml file.
 
 ## Prerequisites
 
@@ -40,6 +40,33 @@ The values.yaml file includes the following configurable parameters for each Jav
 | `javaAgents[].name`                                | Name of the Lightrun Java Agent custom resource.                                                                                                                                                                                                | Required                                                        |
 | `javaAgents[].namespace`                           | Namespace of the Lightrun Java Agent custom resource. Must be in the same namespace as the workload                                                                                                                                             | Required                                                        |
 | `javaAgents[].serverHostname`                      | Hostname of the Lightrun server to connect the agent.                                                                                                                                                                                           | Required                                                        |
+
+The values.yaml file also includes the following configurable parameters for each Node.js agent object. The shape mirrors `javaAgents[]` above, with the differences noted:
+
+| Parameter                                          | Description                                                                                                                                                                                                                                     | Default                                                            |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `nodeAgents[].agentCliFlags`                       | Command-line flags for the Lightrun Node Agent. Unlike `javaAgents[].agentCliFlags`, this is **not** concatenated into `agentEnvVarName` - it's set as a separate `LIGHTRUN_AGENT_CLI_FLAGS` env var on the app container.                    | Optional `""` (empty string)                                        |
+| `nodeAgents[].agentConfig`                         | Additional configuration for the Lightrun Node Agent.                                                                                                                                                                                          | Optional `{}` (empty map)                                           |
+| `nodeAgents[].agentEnvVarName`                     | Specifies the env var patched with `--require <mountPath>/agent/lightrun_agent_bootstrap.js`.                                                                                                                                                  | Optional (if not provided, defaults to `"NODE_OPTIONS"`)             |
+| `nodeAgents[].agentName`                           | Custom name to assign to the Lightrun Node Agent.                                                                                                                                                                                               | Optional (if not provided, defaults to pod name)                    |
+| `nodeAgents[].agentPoolCredentials.existingSecret` | Name of an existing Kubernetes secret that contains the API key and pinned certificate hash for the agent pool.                                                                                                                                | Optional (if not provided, defaults to `name-node-secret`)           |
+| `nodeAgents[].agentPoolCredentials.apiKey`         | Lightrun agent API key.                                                                                                                                                                                                                         | Required if `existingSecret` not set                                |
+| `nodeAgents[].agentPoolCredentials.pinnedCertHash` | 64 character sha256 certificate public key hash for pinning.                                                                                                                                                                                    | Required if `existingSecret` not set                                |
+| `nodeAgents[].agentTags`                           | List of Lightrun Node Agent tags.                                                                                                                                                                                                               | Optional `[]` (empty list)                                          |
+| `nodeAgents[].containerSelector`                   | Selector for containers within the deployment to inject the Lightrun Node Agent.                                                                                                                                                               | Required                                                            |
+| `nodeAgents[].workloadName`                        | Name of the Kubernetes workload (Deployment or StatefulSet) to attach the Lightrun Node Agent.                                                                                                                                                 | Required                                                            |
+| `nodeAgents[].workloadType`                        | Type of the Kubernetes workload. Must be either `"Deployment"` or `"StatefulSet"`.                                                                                                                                                              | Required                                                            |
+| `nodeAgents[].initContainer.image`                 | Image for the Lightrun Node Agent init container.                                                                                                                                                                                               | Required                                                            |
+| `nodeAgents[].initContainer.imagePullPolicy`       | Image pull policy for the init container. Can be one of: Always, IfNotPresent, or Never.                                                                                                                                                       | Optional (if not provided, defaults according to [Kubernetes Default Image Pull Policy](https://kubernetes.io/docs/concepts/containers/images/#imagepullpolicy-defaulting)) |
+| `nodeAgents[].initContainer.sharedVolumeMountPath` | Mount path for the shared volume in the init container.                                                                                                                                                                                         | Optional (if not provided, defaults to `"/lightrun"`"               |
+| `nodeAgents[].initContainer.sharedVolumeName`      | Name of the shared volume for the init container.                                                                                                                                                                                               | Optional (if not provided, defaults to `"lightrun-agent-init-node"`") |
+| `nodeAgents[].name`                                | Name of the Lightrun Node Agent custom resource.                                                                                                                                                                                                | Required                                                            |
+| `nodeAgents[].namespace`                           | Namespace of the Lightrun Node Agent custom resource. Must be in the same namespace as the workload                                                                                                                                             | Required                                                            |
+| `nodeAgents[].serverHostname`                      | Hostname of the Lightrun server to connect the agent.                                                                                                                                                                                           | Required                                                            |
+
+Note the default generated secret name for a `nodeAgents[]` entry is `{{ .name }}-node-secret`, deliberately distinct from `javaAgents[]`'s `{{ .name }}-secret` default, so a Java and Node agent entry sharing the same `.name` don't collide on the same Secret.
+
+Node.js applications also have some platform-level instrumentation limitations - see [Known Node.js limitations](../../docs/custom_resource.md#known-nodejs-limitations) in the CR field reference.
 
 #### 2.1 - Set `initContainer.image`
 
@@ -180,6 +207,33 @@ javaAgents:
       - service-my-other-server
       - region-us_east_1
       - provider-aws
+```
+
+### Node.js
+
+- The `my-node-service-1` targets a Deployment and does not use an `existingSecret`
+- `agentCliFlags`, if set, is passed to the app container as `LIGHTRUN_AGENT_CLI_FLAGS` rather than being concatenated into `agentEnvVarName`
+
+```yaml
+nodeAgents:
+  - name: 'my-node-service-1'
+    namespace: 'my-namespace-1'
+    workloadName: "my-node-deployment-1"
+    workloadType: "Deployment"
+    containerSelector:
+      - my-container-1
+    serverHostname: 'lightrun.example.com'
+    useSecretsAsMountedFiles: false
+    initContainer:
+      image: "lightruncom/lightrun-init-agent-node:latest"
+      imagePullPolicy: "IfNotPresent"
+    agentPoolCredentials:
+      existingSecret: ""
+      apiKey: "xxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+      pinnedCertHash: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    agentTags:
+      - env-production
+      - service-my-node-server
 ```
 
 ## Uninstallation

@@ -17,19 +17,34 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
+// Node-specific identifiers. Deliberately distinct from Java's equivalents (annotationAgentName,
+// cmVolumeName, annotationPatchedEnvName/-Value in patch_funcs.go) so a workload could in principle
+// be targeted by one LightrunJavaAgent and one LightrunNodeAgent simultaneously without collisions.
+// cmNamePrefix, initContainerName's shared constants (annotationConfigMapHash) are intentionally
+// reused as-is from patch_funcs.go: the ConfigMap machinery and configmap-hash rollout trigger are
+// generic, not language-specific.
 const (
-	cmNamePrefix              = "lightrunagent-cm-"
-	cmVolumeName              = "lightrunagent-config"
-	initContainerName         = "lightrun-installer"
-	annotationPatchedEnvName  = "lightrun.com/patched-env-name"
-	annotationPatchedEnvValue = "lightrun.com/patched-env-value"
-	annotationConfigMapHash   = "lightrun.com/configmap-hash"
-	annotationAgentName       = "lightrun.com/lightrunjavaagent"
+	nodeCmVolumeName              = "lightrunagent-config-node"
+	nodeInitContainerName         = "lightrun-installer-node"
+	nodeAnnotationPatchedEnvName  = "lightrun.com/patched-env-name-node"
+	nodeAnnotationPatchedEnvValue = "lightrun.com/patched-env-value-node"
+	nodeAnnotationAgentName       = "lightrun.com/lightrunnodeagent"
+	cliFlagsEnvVarName            = "LIGHTRUN_AGENT_CLI_FLAGS"
 )
 
-func (r *LightrunJavaAgentReconciler) createAgentConfig(lightrunJavaAgent *agentv1beta.LightrunJavaAgent) (corev1.ConfigMap, error) {
+// nodeAgentEnvVarArgument builds the NODE_OPTIONS --require argument. Unlike Java's
+// agentEnvVarArgument, AgentCliFlags is never concatenated here (see patchAppContainersNode).
+func nodeAgentEnvVarArgument(mountPath string) (string, error) {
+	agentArg := "--require " + mountPath + "/agent/lightrun_agent_bootstrap.js"
+	if len(agentArg) > 1024 {
+		return "", errors.New("node agent --require argument has more than 1024 chars")
+	}
+	return agentArg, nil
+}
+
+func (r *LightrunNodeAgentReconciler) createAgentConfig(lightrunNodeAgent *agentv1beta.LightrunNodeAgent) (corev1.ConfigMap, error) {
 	metadata := newAgentMetadata()
-	populateTags(lightrunJavaAgent.Spec.AgentTags, lightrunJavaAgent.Spec.AgentName, &metadata)
+	populateTags(lightrunNodeAgent.Spec.AgentTags, lightrunNodeAgent.Spec.AgentName, &metadata)
 	jsonString, err := json.Marshal(metadata)
 	if err != nil {
 		return corev1.ConfigMap{}, err
@@ -37,23 +52,22 @@ func (r *LightrunJavaAgentReconciler) createAgentConfig(lightrunJavaAgent *agent
 	configMap := corev1.ConfigMap{
 		TypeMeta: metav1.TypeMeta{APIVersion: corev1.SchemeGroupVersion.String(), Kind: "ConfigMap"},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      (cmNamePrefix + lightrunJavaAgent.Name),
-			Namespace: lightrunJavaAgent.Namespace,
+			Name:      (cmNamePrefix + lightrunNodeAgent.Name),
+			Namespace: lightrunNodeAgent.Namespace,
 		},
 		Data: map[string]string{
-			"config":   parseAgentConfig(lightrunJavaAgent.Spec.AgentConfig),
+			"config":   parseAgentConfig(lightrunNodeAgent.Spec.AgentConfig),
 			"metadata": string(jsonString),
 		},
 	}
 
-	if err := ctrl.SetControllerReference(lightrunJavaAgent, &configMap, r.Scheme); err != nil {
+	if err := ctrl.SetControllerReference(lightrunNodeAgent, &configMap, r.Scheme); err != nil {
 		return configMap, err
 	}
 	return configMap, nil
 }
 
-func (r *LightrunJavaAgentReconciler) patchDeployment(lightrunJavaAgent *agentv1beta.LightrunJavaAgent, secret *corev1.Secret, origDeployment *appsv1.Deployment, deploymentApplyConfig *appsv1ac.DeploymentApplyConfiguration, cmDataHash uint64) error {
-	// init spec.template.spec
+func (r *LightrunNodeAgentReconciler) patchNodeDeployment(lightrunNodeAgent *agentv1beta.LightrunNodeAgent, secret *corev1.Secret, origDeployment *appsv1.Deployment, deploymentApplyConfig *appsv1ac.DeploymentApplyConfiguration, cmDataHash uint64) error {
 	deploymentApplyConfig.WithSpec(
 		appsv1ac.DeploymentSpec().WithTemplate(
 			corev1ac.PodTemplateSpec().WithSpec(
@@ -63,30 +77,25 @@ func (r *LightrunJavaAgentReconciler) patchDeployment(lightrunJavaAgent *agentv1
 			}),
 		),
 	).WithAnnotations(map[string]string{
-		annotationAgentName: lightrunJavaAgent.Name,
+		nodeAnnotationAgentName: lightrunNodeAgent.Name,
 	})
-	r.addVolume(deploymentApplyConfig, lightrunJavaAgent)
-	r.addInitContainer(deploymentApplyConfig, lightrunJavaAgent, secret)
-	err = r.patchAppContainers(lightrunJavaAgent, origDeployment, deploymentApplyConfig)
-	if err != nil {
-		return err
-	}
-	return nil
+	r.addNodeVolume(deploymentApplyConfig, lightrunNodeAgent)
+	r.addNodeInitContainer(deploymentApplyConfig, lightrunNodeAgent, secret)
+	return r.patchNodeAppContainers(lightrunNodeAgent, origDeployment, deploymentApplyConfig)
 }
 
-func (r *LightrunJavaAgentReconciler) addVolume(deploymentApplyConfig *appsv1ac.DeploymentApplyConfiguration, lightrunJavaAgent *agentv1beta.LightrunJavaAgent) {
-	// Start with base volumes
+func (r *LightrunNodeAgentReconciler) addNodeVolume(deploymentApplyConfig *appsv1ac.DeploymentApplyConfiguration, lightrunNodeAgent *agentv1beta.LightrunNodeAgent) {
 	volumes := []*corev1ac.VolumeApplyConfiguration{
 		corev1ac.Volume().
-			WithName(lightrunJavaAgent.Spec.InitContainer.SharedVolumeName).
+			WithName(lightrunNodeAgent.Spec.InitContainer.SharedVolumeName).
 			WithEmptyDir(
 				corev1ac.EmptyDirVolumeSource(),
 			),
 		corev1ac.Volume().
-			WithName(cmVolumeName).
+			WithName(nodeCmVolumeName).
 			WithConfigMap(
 				corev1ac.ConfigMapVolumeSource().
-					WithName(cmNamePrefix+lightrunJavaAgent.Name).
+					WithName(cmNamePrefix+lightrunNodeAgent.Name).
 					WithItems(
 						corev1ac.KeyToPath().WithKey("config").WithPath("agent.config"),
 						corev1ac.KeyToPath().WithKey("metadata").WithPath("agent.metadata.json"),
@@ -94,12 +103,11 @@ func (r *LightrunJavaAgentReconciler) addVolume(deploymentApplyConfig *appsv1ac.
 			),
 	}
 
-	// Add secret volume if UseSecretsAsMountedFiles is true
-	if lightrunJavaAgent.Spec.UseSecretsAsMountedFiles {
+	if lightrunNodeAgent.Spec.UseSecretsAsMountedFiles {
 		volumes = append(volumes,
 			corev1ac.Volume().WithName("lightrun-secret").
 				WithSecret(corev1ac.SecretVolumeSource().
-					WithSecretName(secret.Name).
+					WithSecretName(lightrunNodeAgent.Spec.SecretName).
 					WithItems(
 						corev1ac.KeyToPath().WithKey("lightrun_key").WithPath("lightrun_key"),
 						corev1ac.KeyToPath().WithKey("pinned_cert_hash").WithPath("pinned_cert_hash"),
@@ -111,27 +119,23 @@ func (r *LightrunJavaAgentReconciler) addVolume(deploymentApplyConfig *appsv1ac.
 	deploymentApplyConfig.Spec.Template.Spec.WithVolumes(volumes...)
 }
 
-func (r *LightrunJavaAgentReconciler) addInitContainer(deploymentApplyConfig *appsv1ac.DeploymentApplyConfiguration, lightrunJavaAgent *agentv1beta.LightrunJavaAgent, secret *corev1.Secret) {
-	spec := lightrunJavaAgent.Spec
+func (r *LightrunNodeAgentReconciler) addNodeInitContainer(deploymentApplyConfig *appsv1ac.DeploymentApplyConfiguration, lightrunNodeAgent *agentv1beta.LightrunNodeAgent, secret *corev1.Secret) {
+	spec := lightrunNodeAgent.Spec
 	isImagePullPolicyConfigured := spec.InitContainer.ImagePullPolicy != ""
 
-	// Always mount shared and config volumes
 	volumeMounts := []*corev1ac.VolumeMountApplyConfiguration{
 		corev1ac.VolumeMount().WithName(spec.InitContainer.SharedVolumeName).WithMountPath("/tmp/"),
-		corev1ac.VolumeMount().WithName(cmVolumeName).WithMountPath("/tmp/cm/"),
+		corev1ac.VolumeMount().WithName(nodeCmVolumeName).WithMountPath("/tmp/cm/"),
 	}
-	// If using mounted files, mount the secret as a volume
 	if spec.UseSecretsAsMountedFiles {
 		volumeMounts = append(volumeMounts,
 			corev1ac.VolumeMount().WithName("lightrun-secret").WithMountPath("/etc/lightrun/secret").WithReadOnly(true),
 		)
 	}
 
-	// Always set LIGHTRUN_SERVER
 	envVars := []*corev1ac.EnvVarApplyConfiguration{
 		corev1ac.EnvVar().WithName("LIGHTRUN_SERVER").WithValue(spec.ServerHostname),
 	}
-	// If not using mounted files, set LIGHTRUN_KEY and PINNED_CERT from secret as env vars
 	if !spec.UseSecretsAsMountedFiles {
 		envVars = append(envVars,
 			corev1ac.EnvVar().WithName("LIGHTRUN_KEY").WithValueFrom(
@@ -148,7 +152,7 @@ func (r *LightrunJavaAgentReconciler) addInitContainer(deploymentApplyConfig *ap
 	}
 
 	initContainer := corev1ac.Container().
-		WithName(initContainerName).
+		WithName(nodeInitContainerName).
 		WithImage(spec.InitContainer.Image).
 		WithVolumeMounts(volumeMounts...).
 		WithEnv(envVars...).
@@ -169,7 +173,7 @@ func (r *LightrunJavaAgentReconciler) addInitContainer(deploymentApplyConfig *ap
 				WithLimits(
 					corev1.ResourceList{
 						corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(50), resource.BinarySI),
-						corev1.ResourceMemory: *resource.NewScaledQuantity(int64(64), resource.Scale(6)), // 64M
+						corev1.ResourceMemory: *resource.NewScaledQuantity(int64(64), resource.Scale(6)),
 					},
 				).WithRequests(
 				corev1.ResourceList{
@@ -184,44 +188,49 @@ func (r *LightrunJavaAgentReconciler) addInitContainer(deploymentApplyConfig *ap
 	deploymentApplyConfig.Spec.Template.Spec.WithInitContainers(initContainer)
 }
 
-func (r *LightrunJavaAgentReconciler) patchAppContainers(lightrunJavaAgent *agentv1beta.LightrunJavaAgent, origDeployment *appsv1.Deployment, deploymentApplyConfig *appsv1ac.DeploymentApplyConfiguration) error {
-	var found bool = false
+// patchNodeAppContainers SSA-patches the volume mount onto every selected container, and, when
+// AgentCliFlags is set, LIGHTRUN_AGENT_CLI_FLAGS as a plain env var (never concatenated into
+// NODE_OPTIONS). Because this env var is applied via SSA under nodeFieldManager (not the client-side
+// merge patch used for NODE_OPTIONS), it is automatically pruned by the empty-apply unpatch step on
+// deletion, same as the volume mount.
+func (r *LightrunNodeAgentReconciler) patchNodeAppContainers(lightrunNodeAgent *agentv1beta.LightrunNodeAgent, origDeployment *appsv1.Deployment, deploymentApplyConfig *appsv1ac.DeploymentApplyConfiguration) error {
+	var found bool
 	for _, container := range origDeployment.Spec.Template.Spec.Containers {
-		for _, targetContainer := range lightrunJavaAgent.Spec.ContainerSelector {
+		for _, targetContainer := range lightrunNodeAgent.Spec.ContainerSelector {
 			if targetContainer == container.Name {
 				found = true
-				deploymentApplyConfig.Spec.Template.Spec.WithContainers(
-					corev1ac.Container().
-						WithName(container.Name).
-						WithImage(container.Image).
-						WithVolumeMounts(
-							corev1ac.VolumeMount().WithMountPath(lightrunJavaAgent.Spec.InitContainer.SharedVolumeMountPath).WithName(lightrunJavaAgent.Spec.InitContainer.SharedVolumeName),
-						),
-				)
+				containerApplyConfig := corev1ac.Container().
+					WithName(container.Name).
+					WithImage(container.Image).
+					WithVolumeMounts(
+						corev1ac.VolumeMount().WithMountPath(lightrunNodeAgent.Spec.InitContainer.SharedVolumeMountPath).WithName(lightrunNodeAgent.Spec.InitContainer.SharedVolumeName),
+					)
+				if lightrunNodeAgent.Spec.AgentCliFlags != "" {
+					containerApplyConfig.WithEnv(
+						corev1ac.EnvVar().WithName(cliFlagsEnvVarName).WithValue(lightrunNodeAgent.Spec.AgentCliFlags),
+					)
+				}
+				deploymentApplyConfig.Spec.Template.Spec.WithContainers(containerApplyConfig)
 			}
 		}
 	}
 	if !found {
-		err = errors.New("unable to find matching container to patch")
-		return err
+		return errors.New("unable to find matching container to patch")
 	}
 	return nil
 }
 
 // Client side patch, as we can't update value from 2 sources
-func (r *LightrunJavaAgentReconciler) patchJavaToolEnv(deplAnnotations map[string]string, container *corev1.Container, targetEnvVar string, agentArg string) error {
-	// Check if some env was already patched before
-	patchedEnv := deplAnnotations[annotationPatchedEnvName]
-	patchedEnvValue := deplAnnotations[annotationPatchedEnvValue]
+func (r *LightrunNodeAgentReconciler) patchNodeOptionsEnv(deplAnnotations map[string]string, container *corev1.Container, targetEnvVar string, agentArg string) error {
+	patchedEnv := deplAnnotations[nodeAnnotationPatchedEnvName]
+	patchedEnvValue := deplAnnotations[nodeAnnotationPatchedEnvValue]
 
 	if patchedEnv != targetEnvVar || patchedEnvValue != agentArg {
-		// If different env was patched before - unpatch it
-		r.unpatchJavaToolEnv(deplAnnotations, container)
+		r.unpatchNodeOptionsEnv(deplAnnotations, container)
 	}
 
 	targetEnvVarIndex := findEnvVarIndex(targetEnvVar, container.Env)
 	if targetEnvVarIndex == -1 {
-		// No such env - add new
 		container.Env = append(container.Env, corev1.EnvVar{
 			Name:  targetEnvVar,
 			Value: agentArg,
@@ -230,16 +239,16 @@ func (r *LightrunJavaAgentReconciler) patchJavaToolEnv(deplAnnotations map[strin
 		if !strings.Contains(container.Env[targetEnvVarIndex].Value, agentArg) {
 			container.Env[targetEnvVarIndex].Value = container.Env[targetEnvVarIndex].Value + " " + agentArg
 			if len(container.Env[targetEnvVarIndex].Value) > 1024 {
-				return errors.New(targetEnvVar + " has more that 1024 chars. This is a limitation of Java")
+				return errors.New(targetEnvVar + " has more than 1024 chars")
 			}
 		}
 	}
 	return nil
 }
 
-func (r *LightrunJavaAgentReconciler) unpatchJavaToolEnv(deplAnnotations map[string]string, container *corev1.Container) {
-	patchedEnv := deplAnnotations[annotationPatchedEnvName]
-	patchedEnvValue := deplAnnotations[annotationPatchedEnvValue]
+func (r *LightrunNodeAgentReconciler) unpatchNodeOptionsEnv(deplAnnotations map[string]string, container *corev1.Container) {
+	patchedEnv := deplAnnotations[nodeAnnotationPatchedEnvName]
+	patchedEnvValue := deplAnnotations[nodeAnnotationPatchedEnvValue]
 	if patchedEnv == "" && patchedEnvValue == "" {
 		return
 	}
@@ -256,9 +265,7 @@ func (r *LightrunJavaAgentReconciler) unpatchJavaToolEnv(deplAnnotations map[str
 	}
 }
 
-// patchStatefulSet applies changes to a StatefulSet to inject the Lightrun agent
-func (r *LightrunJavaAgentReconciler) patchStatefulSet(lightrunJavaAgent *agentv1beta.LightrunJavaAgent, secret *corev1.Secret, origStatefulSet *appsv1.StatefulSet, statefulSetApplyConfig *appsv1ac.StatefulSetApplyConfiguration, cmDataHash uint64) error {
-	// init spec.template.spec
+func (r *LightrunNodeAgentReconciler) patchNodeStatefulSet(lightrunNodeAgent *agentv1beta.LightrunNodeAgent, secret *corev1.Secret, origStatefulSet *appsv1.StatefulSet, statefulSetApplyConfig *appsv1ac.StatefulSetApplyConfiguration, cmDataHash uint64) error {
 	statefulSetApplyConfig.WithSpec(
 		appsv1ac.StatefulSetSpec().WithTemplate(
 			corev1ac.PodTemplateSpec().WithSpec(
@@ -268,35 +275,26 @@ func (r *LightrunJavaAgentReconciler) patchStatefulSet(lightrunJavaAgent *agentv
 			}),
 		),
 	).WithAnnotations(map[string]string{
-		annotationAgentName: lightrunJavaAgent.Name,
+		nodeAnnotationAgentName: lightrunNodeAgent.Name,
 	})
 
-	// Add volumes to the StatefulSet
-	r.addVolumeToStatefulSet(statefulSetApplyConfig, lightrunJavaAgent)
-	// Add init container to the StatefulSet
-	r.addInitContainerToStatefulSet(statefulSetApplyConfig, lightrunJavaAgent, secret)
-	// Patch app containers in the StatefulSet
-	err = r.patchStatefulSetAppContainers(lightrunJavaAgent, origStatefulSet, statefulSetApplyConfig)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	r.addNodeVolumeToStatefulSet(statefulSetApplyConfig, lightrunNodeAgent)
+	r.addNodeInitContainerToStatefulSet(statefulSetApplyConfig, lightrunNodeAgent, secret)
+	return r.patchNodeStatefulSetAppContainers(lightrunNodeAgent, origStatefulSet, statefulSetApplyConfig)
 }
 
-func (r *LightrunJavaAgentReconciler) addVolumeToStatefulSet(statefulSetApplyConfig *appsv1ac.StatefulSetApplyConfiguration, lightrunJavaAgent *agentv1beta.LightrunJavaAgent) {
-	// Start with base volumes
+func (r *LightrunNodeAgentReconciler) addNodeVolumeToStatefulSet(statefulSetApplyConfig *appsv1ac.StatefulSetApplyConfiguration, lightrunNodeAgent *agentv1beta.LightrunNodeAgent) {
 	volumes := []*corev1ac.VolumeApplyConfiguration{
 		corev1ac.Volume().
-			WithName(lightrunJavaAgent.Spec.InitContainer.SharedVolumeName).
+			WithName(lightrunNodeAgent.Spec.InitContainer.SharedVolumeName).
 			WithEmptyDir(
 				corev1ac.EmptyDirVolumeSource(),
 			),
 		corev1ac.Volume().
-			WithName(cmVolumeName).
+			WithName(nodeCmVolumeName).
 			WithConfigMap(
 				corev1ac.ConfigMapVolumeSource().
-					WithName(cmNamePrefix+lightrunJavaAgent.Name).
+					WithName(cmNamePrefix+lightrunNodeAgent.Name).
 					WithItems(
 						corev1ac.KeyToPath().WithKey("config").WithPath("agent.config"),
 						corev1ac.KeyToPath().WithKey("metadata").WithPath("agent.metadata.json"),
@@ -304,12 +302,11 @@ func (r *LightrunJavaAgentReconciler) addVolumeToStatefulSet(statefulSetApplyCon
 			),
 	}
 
-	// Add secret volume if UseSecretsAsMountedFiles is true
-	if lightrunJavaAgent.Spec.UseSecretsAsMountedFiles {
+	if lightrunNodeAgent.Spec.UseSecretsAsMountedFiles {
 		volumes = append(volumes,
 			corev1ac.Volume().WithName("lightrun-secret").
 				WithSecret(corev1ac.SecretVolumeSource().
-					WithSecretName(secret.Name).
+					WithSecretName(lightrunNodeAgent.Spec.SecretName).
 					WithItems(
 						corev1ac.KeyToPath().WithKey("lightrun_key").WithPath("lightrun_key"),
 						corev1ac.KeyToPath().WithKey("pinned_cert_hash").WithPath("pinned_cert_hash"),
@@ -321,27 +318,23 @@ func (r *LightrunJavaAgentReconciler) addVolumeToStatefulSet(statefulSetApplyCon
 	statefulSetApplyConfig.Spec.Template.Spec.WithVolumes(volumes...)
 }
 
-func (r *LightrunJavaAgentReconciler) addInitContainerToStatefulSet(statefulSetApplyConfig *appsv1ac.StatefulSetApplyConfiguration, lightrunJavaAgent *agentv1beta.LightrunJavaAgent, secret *corev1.Secret) {
-	spec := lightrunJavaAgent.Spec
+func (r *LightrunNodeAgentReconciler) addNodeInitContainerToStatefulSet(statefulSetApplyConfig *appsv1ac.StatefulSetApplyConfiguration, lightrunNodeAgent *agentv1beta.LightrunNodeAgent, secret *corev1.Secret) {
+	spec := lightrunNodeAgent.Spec
 	isImagePullPolicyConfigured := spec.InitContainer.ImagePullPolicy != ""
 
-	// Always mount shared and config volumes
 	volumeMounts := []*corev1ac.VolumeMountApplyConfiguration{
 		corev1ac.VolumeMount().WithName(spec.InitContainer.SharedVolumeName).WithMountPath("/tmp/"),
-		corev1ac.VolumeMount().WithName(cmVolumeName).WithMountPath("/tmp/cm/"),
+		corev1ac.VolumeMount().WithName(nodeCmVolumeName).WithMountPath("/tmp/cm/"),
 	}
-	// If using mounted files, mount the secret as a volume
 	if spec.UseSecretsAsMountedFiles {
 		volumeMounts = append(volumeMounts,
 			corev1ac.VolumeMount().WithName("lightrun-secret").WithMountPath("/etc/lightrun/secret").WithReadOnly(true),
 		)
 	}
 
-	// Always set LIGHTRUN_SERVER
 	envVars := []*corev1ac.EnvVarApplyConfiguration{
 		corev1ac.EnvVar().WithName("LIGHTRUN_SERVER").WithValue(spec.ServerHostname),
 	}
-	// If not using mounted files, set LIGHTRUN_KEY and PINNED_CERT from secret as env vars
 	if !spec.UseSecretsAsMountedFiles {
 		envVars = append(envVars,
 			corev1ac.EnvVar().WithName("LIGHTRUN_KEY").WithValueFrom(
@@ -358,7 +351,7 @@ func (r *LightrunJavaAgentReconciler) addInitContainerToStatefulSet(statefulSetA
 	}
 
 	initContainer := corev1ac.Container().
-		WithName(initContainerName).
+		WithName(nodeInitContainerName).
 		WithImage(spec.InitContainer.Image).
 		WithVolumeMounts(volumeMounts...).
 		WithEnv(envVars...).
@@ -379,7 +372,7 @@ func (r *LightrunJavaAgentReconciler) addInitContainerToStatefulSet(statefulSetA
 				WithLimits(
 					corev1.ResourceList{
 						corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(50), resource.BinarySI),
-						corev1.ResourceMemory: *resource.NewScaledQuantity(int64(64), resource.Scale(6)), // 64M
+						corev1.ResourceMemory: *resource.NewScaledQuantity(int64(64), resource.Scale(6)),
 					},
 				).WithRequests(
 				corev1.ResourceList{
@@ -394,40 +387,29 @@ func (r *LightrunJavaAgentReconciler) addInitContainerToStatefulSet(statefulSetA
 	statefulSetApplyConfig.Spec.Template.Spec.WithInitContainers(initContainer)
 }
 
-func (r *LightrunJavaAgentReconciler) patchStatefulSetAppContainers(lightrunJavaAgent *agentv1beta.LightrunJavaAgent, origStatefulSet *appsv1.StatefulSet, statefulSetApplyConfig *appsv1ac.StatefulSetApplyConfiguration) error {
-	var found bool = false
+func (r *LightrunNodeAgentReconciler) patchNodeStatefulSetAppContainers(lightrunNodeAgent *agentv1beta.LightrunNodeAgent, origStatefulSet *appsv1.StatefulSet, statefulSetApplyConfig *appsv1ac.StatefulSetApplyConfiguration) error {
+	var found bool
 	for _, container := range origStatefulSet.Spec.Template.Spec.Containers {
-		for _, targetContainer := range lightrunJavaAgent.Spec.ContainerSelector {
+		for _, targetContainer := range lightrunNodeAgent.Spec.ContainerSelector {
 			if targetContainer == container.Name {
 				found = true
-				statefulSetApplyConfig.Spec.Template.Spec.WithContainers(
-					corev1ac.Container().
-						WithName(container.Name).
-						WithImage(container.Image).
-						WithVolumeMounts(
-							corev1ac.VolumeMount().WithMountPath(lightrunJavaAgent.Spec.InitContainer.SharedVolumeMountPath).WithName(lightrunJavaAgent.Spec.InitContainer.SharedVolumeName),
-						),
-				)
+				containerApplyConfig := corev1ac.Container().
+					WithName(container.Name).
+					WithImage(container.Image).
+					WithVolumeMounts(
+						corev1ac.VolumeMount().WithMountPath(lightrunNodeAgent.Spec.InitContainer.SharedVolumeMountPath).WithName(lightrunNodeAgent.Spec.InitContainer.SharedVolumeName),
+					)
+				if lightrunNodeAgent.Spec.AgentCliFlags != "" {
+					containerApplyConfig.WithEnv(
+						corev1ac.EnvVar().WithName(cliFlagsEnvVarName).WithValue(lightrunNodeAgent.Spec.AgentCliFlags),
+					)
+				}
+				statefulSetApplyConfig.Spec.Template.Spec.WithContainers(containerApplyConfig)
 			}
 		}
 	}
 	if !found {
-		err = errors.New("unable to find matching container to patch")
-		return err
+		return errors.New("unable to find matching container to patch")
 	}
 	return nil
-}
-
-// configMapDataHash calculates a hash of the ConfigMap data to detect changes
-func configMapDataHash(cmData map[string]string) uint64 {
-	keys := make([]string, 0, len(cmData))
-	for k := range cmData {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	var hashString string
-	for _, k := range keys {
-		hashString += cmData[k]
-	}
-	return hash(hashString)
 }

@@ -13,9 +13,11 @@ type AgentMetadata struct {
 	Registration Registration `json:"registration"`
 }
 
-var metadata = AgentMetadata{
-	Registration: Registration{
-		DisplayName: "",
-		Tags:        []Tag{},
-	},
+func newAgentMetadata() AgentMetadata {
+	return AgentMetadata{
+		Registration: Registration{
+			DisplayName: "",
+			Tags:        []Tag{},
+		},
+	}
 }
