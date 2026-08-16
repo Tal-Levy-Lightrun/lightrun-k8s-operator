@@ -105,7 +105,9 @@ spec:
     max_log_cpu_cost: "2"
   # DIVERGENCE from LightrunJavaAgent: agentCliFlags is NOT concatenated into agentEnvVarName
   # (Java uses `-agentpath:...=cliFlags` syntax). Instead it's set as a separate
-  # LIGHTRUN_AGENT_CLI_FLAGS env var on the app container, consumed by the bootstrap script.
+  # LIGHTRUN_AGENT_CLI_FLAGS env var on the app container. Unlike Java's single opaque string, the
+  # Node agent's start() takes a config object, so this is expected to be a JSON-encoded partial
+  # config, e.g. '{"lightrunWaitForInit":true}', shallow-merged in by the bootstrap script.
   agentCliFlags: ""
   # Tags that agent will be using. You'll see them in the UI and in the IDE plugin as well
   agentTags:
@@ -132,9 +134,42 @@ type: Opaque
 
 Note: in the `lightrun-agents` Helm chart, a `nodeAgents[]` entry that doesn't set `agentPoolCredentials.existingSecret` gets a generated secret (and `secretName`) defaulting to `{{ .name }}-node-secret` - deliberately distinct from `javaAgents[]`'s `{{ .name }}-secret` default, so a Java and Node agent entry sharing the same `.name` don't collide on the same Secret.
 
+### TypeScript support
+
+The Lightrun Node.js agent never executes or parses `.ts` files directly - it attaches to the
+**compiled JavaScript** via the V8 Inspector protocol, and maps breakpoints on `.ts` lines to the
+compiled `.js` positions purely through source maps. For TypeScript apps to work:
+
+- `tsconfig.json` must have `"sourceMap": true` (see [TypeScript's `sourceMap` option](https://www.typescriptlang.org/tsconfig#sourceMap)).
+- Both the compiled `.js` file **and its `.js.map`** must be present on disk, next to each other, in
+  the running container. This is the most common failure mode: multi-stage Docker builds that ship
+  only compiled output and intentionally strip `.map` files will break breakpoint placement.
+- On-the-fly transpilation (`ts-node`, `tsx`) is **not supported** - the agent only discovers
+  `*.js.map` files that already exist on disk, so apps run this way (no separate compile step, no
+  on-disk map file) will fail to resolve `.ts` breakpoints.
+
+Bundled output (e.g. webpack) with source maps is supported as well.
+
+Verified locally end-to-end (`k3d`, real agent build from a released `nodejs-agent.zip` artifact): a
+precompiled TypeScript app with `sourceMap: true` correctly had its `.js.map` discovered and parsed
+by the agent, and breakpoint locations resolved back to the original `.ts` positions.
+
 ### Known Node.js limitations
 
-These are platform-level limitations of Node's `--require` mechanism (documented elsewhere across the Node instrumentation ecosystem, e.g. by OpenTelemetry and Datadog), not gaps in this operator:
-
-- `--require` only hooks CommonJS module loading (`Module._load`). Applications loaded as ES modules (ESM) are not auto-instrumented by this mechanism.
-- `cluster.fork()` worker processes inherit `NODE_OPTIONS` from the parent automatically and are instrumented correctly. Manually-spawned `worker_threads`, however, do **not** inherit the parent's environment unless the application explicitly passes `env: process.env` when creating the worker - this is a Node.js platform behavior, not something the operator can patch around.
+- **ESM (`"type": "module"`, native `import`) is supported.** Earlier guidance here (and in similar
+  guidance from other vendors' Node auto-instrumentation) assumed `--require` auto-instrumentation
+  hooks CommonJS's `Module._load` and therefore can't see ES modules - that's true of
+  require-hook-based auto-instrumentation (e.g. OpenTelemetry's, Datadog's), but the Lightrun agent
+  doesn't work that way: it attaches via the V8 Inspector protocol (`Debugger.scriptParsed`/
+  `setBreakpointByUrl`), which fires for a script regardless of whether it was loaded as CommonJS or
+  ESM, and Node's `--require` flag preloading a CommonJS bootstrap file is independently compatible
+  with an ESM main module. Verified locally: a native ESM sample app loaded via the same
+  `NODE_OPTIONS=--require ...` mechanism initialized the agent correctly with no errors. One cosmetic
+  difference observed: the agent's startup log line ("Lightrun Debugger is attached to ...") reports
+  `undefined` for the entry file path on an ESM main module (vs. the real path for CommonJS), since
+  it relies on `require.main`, which doesn't exist for ESM entry points - this doesn't affect file
+  scanning or breakpoint placement, which are directory-based, not `require.main`-based.
+- `cluster.fork()` worker processes inherit `NODE_OPTIONS` from the parent automatically and are instrumented correctly. Manually-spawned `worker_threads`, however, do **not** inherit the parent's environment unless the application explicitly passes `env: process.env` when creating the worker - this is a Node.js platform behavior, not something the operator can patch around. (Improving this on the agent side - e.g. an opt-in helper that auto-registers inside spawned workers - is tracked separately against the `athena/nodejs-agent` repo, not this operator.)
+- The Lightrun Node.js agent requires **Node.js 18+** (`engines.node` in the agent's `package.json`) - this is a correction from earlier guidance that assumed 14+ with no version gating.
+- **Ambiguous filenames in monorepos/bundled output**: if two files share the same relative suffix, breakpoint placement can fail with a "more than one possible match" error. Use the agent's `appPathRelativeToRepository`/`pathResolver` config (via `agentConfig`) to disambiguate - relevant here since `containerSelector` targets one container/service at a time, which is exactly the shape where this can occur.
+- Process managers (pm2, nodemon) haven't been specifically validated - both inherit environment variables into spawned child processes by default, so `NODE_OPTIONS` propagation is expected to work the same way it does for `cluster.fork()`, but this hasn't been tested end-to-end.

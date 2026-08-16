@@ -27,3 +27,8 @@ coverage-report.html
 .vscode
 # macOS
 .DS_Store
+
+# Real Lightrun agent release artifacts used for local POC/testing only - CI sources these from S3
+# at build time (see .github/workflows/init_container*.yaml); never commit them to this repo.
+lightrun-init-agent-node/*.zip
+lightrun-init-agent/*.zip

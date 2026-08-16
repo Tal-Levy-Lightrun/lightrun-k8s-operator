@@ -114,11 +114,15 @@ update_config() {
     local lightrun_key=$(get_value "LIGHTRUN_KEY" "${SECRET_DIR}/lightrun_key")
     local pinned_cert=$(get_value "PINNED_CERT" "${SECRET_DIR}/pinned_cert_hash")
 
-    if sed -n "s|com.lightrun.server=.*|com.lightrun.server=https://${LIGHTRUN_SERVER}|p" "${config_file}" | grep -q .; then
+    # NOTE: unlike Java's agent.config (which uses `com.lightrun.server=<url-with-scheme>`), the real
+    # Node agent's config-file parser (getAgentConfig.ts) reads this value under the bare key
+    # `apiEndpoint`, as a hostname without a scheme - it prepends `https://` itself internally
+    # (src/agent/controller.ts, src/client/stackdriver/debug.ts). Do not add a scheme prefix here.
+    if sed -n "s|apiEndpoint=.*|apiEndpoint=${LIGHTRUN_SERVER}|p" "${config_file}" | grep -q .; then
         # Perform actual in-place change
-        sed -i "s|com.lightrun.server=.*|com.lightrun.server=https://${LIGHTRUN_SERVER}|" "${config_file}"
+        sed -i "s|apiEndpoint=.*|apiEndpoint=${LIGHTRUN_SERVER}|" "${config_file}"
     else
-        missing_configuration_params="${missing_configuration_params} com.lightrun.server"
+        missing_configuration_params="${missing_configuration_params} apiEndpoint"
     fi
     if sed -n "s|com.lightrun.secret=.*|com.lightrun.secret=${lightrun_key}|p" "${config_file}" | grep -q .; then
         # Perform actual in-place change

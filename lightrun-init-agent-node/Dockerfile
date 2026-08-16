@@ -1,11 +1,36 @@
 ARG base_image_tag=alpine-3.24.1-r0
+ARG node_builder_image_tag=20-alpine
+
+# The real Node.js agent release artifact ($FILE) is a zip containing a single `npm pack` tarball
+# (lightrun-<version>.tgz) - unlike Java's agent.zip, it is not a flat, self-contained unzip: the
+# package's runtime dependencies (axios, winston, source-map, etc. - see its package.json) are not
+# bundled in the tarball and must be resolved via npm. This builder stage does that resolution with
+# a real Node/npm toolchain, then the final stage below copies over only the resulting /agent tree,
+# so the shipped image stays on the same minimal base Java's init container uses (no node/npm/apk
+# left behind in the image that actually runs in the cluster).
+FROM node:${node_builder_image_tag} AS agent-builder
+ARG FILE
+
+RUN apk add --no-cache unzip
+
+COPY lightrun-init-agent-node/$FILE /tmp/$FILE
+
+RUN unzip -o /tmp/$FILE -d /tmp/nodejs-agent-pkg && \
+    mkdir -p /agent/node_modules/lightrun && \
+    tar -xzf /tmp/nodejs-agent-pkg/*.tgz --strip-components=1 -C /agent/node_modules/lightrun && \
+    rm -rf /tmp/$FILE /tmp/nodejs-agent-pkg && \
+    cd /agent/node_modules/lightrun && \
+    # The release artifact doesn't ship its own package-lock.json (npm pack doesn't include one), and
+    # a lockfile hand-committed to this repo would drift out of sync with a future release's
+    # package.json. Generate one fresh from whatever manifest this release actually ships, then
+    # install strictly from it - deterministic for this build, without pinning across releases.
+    npm install --package-lock-only --omit=dev && \
+    npm ci --omit=dev && \
+    npm cache clean --force
 
 FROM lightruncom/prod-base:${base_image_tag}
 
-# Placeholder: the real proprietary Lightrun Node.js agent artifact is an external build input not
-# available in this repo (mirrors Java's $FILE build-arg unzip, which is out of scope here). This
-# bakes in a minimal bootstrap script so the injection wiring (volume, init container, NODE_OPTIONS,
-# pod Ready) can be validated end-to-end without the real product binary.
+COPY --from=agent-builder /agent /agent
 COPY lightrun-init-agent-node/agent.config /agent/agent.config
 COPY lightrun-init-agent-node/lightrun_agent_bootstrap.js /agent/lightrun_agent_bootstrap.js
 
