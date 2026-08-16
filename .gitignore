@@ -29,6 +29,6 @@ coverage-report.html
 .DS_Store
 
 # Proprietary agent release artifacts - CI downloads these from S3 at build time
-# (see .github/workflows/init_container*.yaml); never commit them to this repo.
-lightrun-init-agent-node/*.zip
-lightrun-init-agent/*.zip
+# (see .github/workflows/init_container.yaml); never commit them to this repo.
+lightrun-init-agent/java/*.zip
+lightrun-init-agent/node/*.zip

@@ -25,14 +25,14 @@ jobs:
       matrix:
         agents:
           [
-            { component: "java", name: "linux", file: "agent.zip", platform: "linux/amd64", dir: "lightrun-init-agent", repo: "k8s-operator-init-java-agent" },
-            { component: "java", name: "alpine", file: "agent-alpine.zip", platform: "linux/amd64", dir: "lightrun-init-agent", repo: "k8s-operator-init-java-agent" },
-            { component: "java", name: "linux-arm64", file: "agent-arm64.zip", platform: "linux/arm64", dir: "lightrun-init-agent", repo: "k8s-operator-init-java-agent" },
-            { component: "java", name: "alpine-arm64", file: "agent-alpine-arm64.zip", platform: "linux/arm64", dir: "lightrun-init-agent", repo: "k8s-operator-init-java-agent" },
+            { component: "java", name: "linux", file: "agent.zip", platform: "linux/amd64", dir: "lightrun-init-agent/java", repo: "k8s-operator-init-java-agent" },
+            { component: "java", name: "alpine", file: "agent-alpine.zip", platform: "linux/amd64", dir: "lightrun-init-agent/java", repo: "k8s-operator-init-java-agent" },
+            { component: "java", name: "linux-arm64", file: "agent-arm64.zip", platform: "linux/arm64", dir: "lightrun-init-agent/java", repo: "k8s-operator-init-java-agent" },
+            { component: "java", name: "alpine-arm64", file: "agent-alpine-arm64.zip", platform: "linux/arm64", dir: "lightrun-init-agent/java", repo: "k8s-operator-init-java-agent" },
             # nodejs-agent.zip is a single, platform-independent npm package tarball (no native
             # binary), so unlike Java's per-arch zips, the same file is reused across both variants.
-            { component: "node", name: "alpine", file: "nodejs-agent.zip", platform: "linux/amd64", dir: "lightrun-init-agent-node", repo: "k8s-operator-init-node-agent" },
-            { component: "node", name: "alpine-arm64", file: "nodejs-agent.zip", platform: "linux/arm64", dir: "lightrun-init-agent-node", repo: "k8s-operator-init-node-agent" },
+            { component: "node", name: "alpine", file: "nodejs-agent.zip", platform: "linux/amd64", dir: "lightrun-init-agent/node", repo: "k8s-operator-init-node-agent" },
+            { component: "node", name: "alpine-arm64", file: "nodejs-agent.zip", platform: "linux/arm64", dir: "lightrun-init-agent/node", repo: "k8s-operator-init-node-agent" },
           ]
     runs-on: ubuntu-latest
     name: Build and push Docker image

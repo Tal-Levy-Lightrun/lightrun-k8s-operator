@@ -10,7 +10,7 @@ ARG FILE
 
 RUN apk add --no-cache unzip
 
-COPY lightrun-init-agent-node/$FILE /tmp/$FILE
+COPY lightrun-init-agent/node/$FILE /tmp/$FILE
 
 RUN unzip -o /tmp/$FILE -d /tmp/nodejs-agent-pkg && \
     mkdir -p /agent/node_modules/lightrun && \
@@ -26,8 +26,8 @@ RUN unzip -o /tmp/$FILE -d /tmp/nodejs-agent-pkg && \
 FROM lightruncom/prod-base:${base_image_tag}
 
 COPY --from=agent-builder /agent /agent
-COPY lightrun-init-agent-node/agent.config /agent/agent.config
-COPY lightrun-init-agent-node/lightrun_agent_bootstrap.js /agent/lightrun_agent_bootstrap.js
+COPY lightrun-init-agent/node/agent.config /agent/agent.config
+COPY lightrun-init-agent/node/lightrun_agent_bootstrap.js /agent/lightrun_agent_bootstrap.js
 
 RUN sed -i.bak "s|com.lightrun.secret=.*|com.lightrun.secret=|" /agent/agent.config && rm /agent/agent.config.bak && \
     sed -i.bak "s|pinned_certs=.*|pinned_certs=|" /agent/agent.config && rm /agent/agent.config.bak && \
@@ -40,7 +40,7 @@ RUN sed -i.bak "s|com.lightrun.secret=.*|com.lightrun.secret=|" /agent/agent.con
     chmod -R g=u /etc/lightrun/secret
 
 # Copy and set permissions for update_config.sh before switching user
-COPY lightrun-init-agent-node/update_config.sh /update_config.sh
+COPY lightrun-init-agent/node/update_config.sh /update_config.sh
 RUN chmod 750 /update_config.sh
 
 USER 1000

@@ -3,7 +3,7 @@ ARG base_image_tag=alpine-3.24.1-r0
 FROM lightruncom/prod-base:${base_image_tag}
 ARG FILE
 
-COPY lightrun-init-agent/$FILE /tmp/$FILE
+COPY lightrun-init-agent/java/$FILE /tmp/$FILE
 
 RUN unzip -o /tmp/$FILE -d /agent ;\
     rm -rf /tmp/$FILE && \
@@ -19,7 +19,7 @@ RUN unzip -o /tmp/$FILE -d /agent ;\
     chmod -R g=u /etc/lightrun/secret
 
 # Copy and set permissions for update_config.sh before switching user
-COPY lightrun-init-agent/update_config.sh /update_config.sh
+COPY lightrun-init-agent/java/update_config.sh /update_config.sh
 RUN chmod 750 /update_config.sh
 
 USER 1000

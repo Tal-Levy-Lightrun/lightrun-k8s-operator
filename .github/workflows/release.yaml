@@ -6,7 +6,7 @@ on:
     branches:
       - main
     paths-ignore:
-      - lightrun-init-agent/*
+      - lightrun-init-agent/**
       - .github/**
       - charts/**
       - grafana/*
