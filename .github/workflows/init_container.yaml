@@ -25,22 +25,14 @@ jobs:
       matrix:
         agents:
           [
-            { name: "linux", file: "agent.zip", platform: "linux/amd64" },
-            {
-              name: "alpine",
-              file: "agent-alpine.zip",
-              platform: "linux/amd64",
-            },
-            {
-              name: "linux-arm64",
-              file: "agent-arm64.zip",
-              platform: "linux/arm64",
-            },
-            {
-              name: "alpine-arm64",
-              file: "agent-alpine-arm64.zip",
-              platform: "linux/arm64",
-            },
+            { component: "java", name: "linux", file: "agent.zip", platform: "linux/amd64", dir: "lightrun-init-agent", repo: "k8s-operator-init-java-agent" },
+            { component: "java", name: "alpine", file: "agent-alpine.zip", platform: "linux/amd64", dir: "lightrun-init-agent", repo: "k8s-operator-init-java-agent" },
+            { component: "java", name: "linux-arm64", file: "agent-arm64.zip", platform: "linux/arm64", dir: "lightrun-init-agent", repo: "k8s-operator-init-java-agent" },
+            { component: "java", name: "alpine-arm64", file: "agent-alpine-arm64.zip", platform: "linux/arm64", dir: "lightrun-init-agent", repo: "k8s-operator-init-java-agent" },
+            # nodejs-agent.zip is a single, platform-independent npm package tarball (no native
+            # binary), so unlike Java's per-arch zips, the same file is reused across both variants.
+            { component: "node", name: "alpine", file: "nodejs-agent.zip", platform: "linux/amd64", dir: "lightrun-init-agent-node", repo: "k8s-operator-init-node-agent" },
+            { component: "node", name: "alpine-arm64", file: "nodejs-agent.zip", platform: "linux/arm64", dir: "lightrun-init-agent-node", repo: "k8s-operator-init-node-agent" },
           ]
     runs-on: ubuntu-latest
     name: Build and push Docker image
@@ -105,18 +97,18 @@ jobs:
           fi
           
           # Define the base repository name
-          DOCKER_REPO="lightruncom/k8s-operator-init-java-agent-${{ matrix.agents.name }}${repo_suffix}"
+          DOCKER_REPO="lightruncom/${{ matrix.agents.repo }}-${{ matrix.agents.name }}${repo_suffix}"
 
           # Check if repository exists
           repo_check=$(curl -s -f -H "Authorization: Bearer ${TOKEN}" \
-            "https://hub.docker.com/v2/namespaces/lightruncom/repositories/k8s-operator-init-java-agent-${{ matrix.agents.name }}${repo_suffix}")
+            "https://hub.docker.com/v2/namespaces/lightruncom/repositories/${{ matrix.agents.repo }}-${{ matrix.agents.name }}${repo_suffix}")
           if [[ $? -ne 0 ]] ; then
             echo "Error: Repository ${DOCKER_REPO} does not exist in Docker Hub. Please create it first."
             exit 1
           fi
-          
+
           dockerhub_tags=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
-            "https://hub.docker.com/v2/namespaces/lightruncom/repositories/k8s-operator-init-java-agent-${{ matrix.agents.name }}${repo_suffix}/tags?page_size=50" | jq -r ".results[].name")
+            "https://hub.docker.com/v2/namespaces/lightruncom/repositories/${{ matrix.agents.repo }}-${{ matrix.agents.name }}${repo_suffix}/tags?page_size=50" | jq -r ".results[].name")
           if [[ $? -ne  0 ]] ; then
             echo "Failed to fetch existing tags"
             exit 1
@@ -141,13 +133,13 @@ jobs:
 
       - name: Download agent artifacts
         run: |
-          aws s3 cp s3://${{ secrets.RELEASE_ARTIFACTS_BUCKET }}/artifacts/${{ inputs.release_tag }}/${{ matrix.agents.file }} ./lightrun-init-agent/
+          aws s3 cp s3://${{ secrets.RELEASE_ARTIFACTS_BUCKET }}/artifacts/${{ inputs.release_tag }}/${{ matrix.agents.file }} ./${{ matrix.agents.dir }}/
 
-      - name: Build and push ${{ matrix.agents.name }} container
+      - name: Build and push ${{ matrix.agents.component }}-${{ matrix.agents.name }} container
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: ./lightrun-init-agent/Dockerfile
+          file: ./${{ matrix.agents.dir }}/Dockerfile
           push: true
           platforms: ${{ matrix.agents.platform }}
           tags: ${{steps.set_docker_tags.outputs.DOCKER_TAGS}}
@@ -160,6 +152,6 @@ jobs:
         env:
           SLACK_CHANNEL: devops-alerts
           SLACK_COLOR: ${{ job.status }}
-          SLACK_MESSAGE: "Tag ${{ inputs.release_tag }} ${{ inputs.is_internal == 'true' && '(Internal)' || '' }} | Platform ${{ matrix.agents.name }}"
+          SLACK_MESSAGE: "Tag ${{ inputs.release_tag }} ${{ inputs.is_internal == 'true' && '(Internal)' || '' }} | ${{ matrix.agents.component }} | Platform ${{ matrix.agents.name }}"
           SLACK_TITLE: Init container ${{ inputs.is_internal == 'true' && '(Internal)' || '' }} build status - ${{ job.status }}
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
