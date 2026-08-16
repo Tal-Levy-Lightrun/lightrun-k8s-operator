@@ -28,6 +28,7 @@ rules:
   - agents.lightrun.com
   resources:
   - lightrunjavaagents
+  - lightrunnodeagents
   verbs:
   - create
   - delete
@@ -40,12 +41,14 @@ rules:
   - agents.lightrun.com
   resources:
   - lightrunjavaagents/finalizers
+  - lightrunnodeagents/finalizers
   verbs:
   - update
 - apiGroups:
   - agents.lightrun.com
   resources:
   - lightrunjavaagents/status
+  - lightrunnodeagents/status
   verbs:
   - get
   - patch

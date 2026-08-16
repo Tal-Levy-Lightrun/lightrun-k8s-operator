@@ -1,0 +1,40 @@
+{{ range .Values.nodeAgents }}
+---
+apiVersion: agents.lightrun.com/v1beta
+kind: LightrunNodeAgent
+metadata:
+  name: {{ .name }}
+  namespace: {{ .namespace }}
+spec:
+  initContainer:
+    image: {{ .initContainer.image }}
+    {{- if .initContainer.imagePullPolicy }}
+    imagePullPolicy: {{ .initContainer.imagePullPolicy }}
+    {{- end }}
+    sharedVolumeName: {{ .initContainer.sharedVolumeName | default "lightrun-agent-init-node" }}
+    sharedVolumeMountPath: {{ .initContainer.sharedVolumeMountPath | default "/lightrun" }}
+  workloadName: {{ .workloadName }}
+  workloadType: {{ .workloadType }}
+  containerSelector: {{- toYaml .containerSelector | nindent 4 }}
+  {{- if .agentPoolCredentials.existingSecret }}
+  secretName: {{ .agentPoolCredentials.existingSecret }}
+  {{- else }}
+  secretName: {{ .name }}-node-secret
+  {{- end }}
+  serverHostname: {{ .serverHostname }}
+  useSecretsAsMountedFiles: {{ .useSecretsAsMountedFiles | default true }}
+  agentEnvVarName: {{ .agentEnvVarName | default "NODE_OPTIONS" }}
+  {{- if .agentConfig }}
+  agentConfig: {{ toYaml .agentConfig | nindent 4 }}
+  {{- end }}
+  {{- if .agentCliFlags }}
+  agentCliFlags: {{ .agentCliFlags }}
+  {{- end }}
+  agentTags:
+    {{- range .agentTags }}
+    - {{. -}}
+    {{- end }}
+  {{- if .agentName }}
+  agentName: {{ .agentName }}
+  {{- end }}
+{{- end }}
