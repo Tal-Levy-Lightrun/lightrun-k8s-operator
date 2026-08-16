@@ -23,9 +23,8 @@ jobs:
   set_image_tag_variable:
     strategy:
       matrix:
-        # Unlike the Java init container, the Node.js agent artifact (nodejs-agent.zip) is a single,
-        # platform-independent npm package tarball - no native binary, so the same file is reused
-        # across every platform variant below (see lightrun-init-agent-node/Dockerfile).
+        # nodejs-agent.zip is a single, platform-independent npm package tarball (no native binary),
+        # so unlike Java's per-arch zips, the same file is reused across every variant below.
         agents:
           [
             { name: "alpine", platform: "linux/amd64" },

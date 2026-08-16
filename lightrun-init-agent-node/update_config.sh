@@ -114,10 +114,9 @@ update_config() {
     local lightrun_key=$(get_value "LIGHTRUN_KEY" "${SECRET_DIR}/lightrun_key")
     local pinned_cert=$(get_value "PINNED_CERT" "${SECRET_DIR}/pinned_cert_hash")
 
-    # NOTE: unlike Java's agent.config (which uses `com.lightrun.server=<url-with-scheme>`), the real
-    # Node agent's config-file parser (getAgentConfig.ts) reads this value under the bare key
-    # `apiEndpoint`, as a hostname without a scheme - it prepends `https://` itself internally
-    # (src/agent/controller.ts, src/client/stackdriver/debug.ts). Do not add a scheme prefix here.
+    # Unlike Java's agent.config (`com.lightrun.server=<url-with-scheme>`), the Node agent's
+    # config parser reads this under the bare key `apiEndpoint` and prepends `https://` itself -
+    # do not add a scheme prefix here.
     if sed -n "s|apiEndpoint=.*|apiEndpoint=${LIGHTRUN_SERVER}|p" "${config_file}" | grep -q .; then
         # Perform actual in-place change
         sed -i "s|apiEndpoint=.*|apiEndpoint=${LIGHTRUN_SERVER}|" "${config_file}"

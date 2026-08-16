@@ -150,26 +150,18 @@ compiled `.js` positions purely through source maps. For TypeScript apps to work
 
 Bundled output (e.g. webpack) with source maps is supported as well.
 
-Verified locally end-to-end (`k3d`, real agent build from a released `nodejs-agent.zip` artifact): a
-precompiled TypeScript app with `sourceMap: true` correctly had its `.js.map` discovered and parsed
-by the agent, and breakpoint locations resolved back to the original `.ts` positions.
-
 ### Known Node.js limitations
 
-- **ESM (`"type": "module"`, native `import`) is supported.** Earlier guidance here (and in similar
-  guidance from other vendors' Node auto-instrumentation) assumed `--require` auto-instrumentation
-  hooks CommonJS's `Module._load` and therefore can't see ES modules - that's true of
-  require-hook-based auto-instrumentation (e.g. OpenTelemetry's, Datadog's), but the Lightrun agent
-  doesn't work that way: it attaches via the V8 Inspector protocol (`Debugger.scriptParsed`/
-  `setBreakpointByUrl`), which fires for a script regardless of whether it was loaded as CommonJS or
-  ESM, and Node's `--require` flag preloading a CommonJS bootstrap file is independently compatible
-  with an ESM main module. Verified locally: a native ESM sample app loaded via the same
-  `NODE_OPTIONS=--require ...` mechanism initialized the agent correctly with no errors. One cosmetic
-  difference observed: the agent's startup log line ("Lightrun Debugger is attached to ...") reports
-  `undefined` for the entry file path on an ESM main module (vs. the real path for CommonJS), since
-  it relies on `require.main`, which doesn't exist for ESM entry points - this doesn't affect file
-  scanning or breakpoint placement, which are directory-based, not `require.main`-based.
-- `cluster.fork()` worker processes inherit `NODE_OPTIONS` from the parent automatically and are instrumented correctly. Manually-spawned `worker_threads`, however, do **not** inherit the parent's environment unless the application explicitly passes `env: process.env` when creating the worker - this is a Node.js platform behavior, not something the operator can patch around. (Improving this on the agent side - e.g. an opt-in helper that auto-registers inside spawned workers - is tracked separately against the `athena/nodejs-agent` repo, not this operator.)
-- The Lightrun Node.js agent requires **Node.js 18+** (`engines.node` in the agent's `package.json`) - this is a correction from earlier guidance that assumed 14+ with no version gating.
+- **ESM (`"type": "module"`, native `import`) is supported.** The Lightrun agent attaches via the V8
+  Inspector protocol (`Debugger.scriptParsed`/`setBreakpointByUrl`), which fires for a script
+  regardless of whether it was loaded as CommonJS or ESM, and Node's `--require` flag preloading a
+  CommonJS bootstrap file is independently compatible with an ESM main module. This differs from
+  require-hook-based auto-instrumentation (e.g. OpenTelemetry's, Datadog's), which does depend on
+  CommonJS's `Module._load` and can't see ES modules. One cosmetic difference: the agent's startup
+  log line ("Lightrun Debugger is attached to ...") reports `undefined` for the entry file path on
+  an ESM main module (vs. the real path for CommonJS), since it relies on `require.main`, which
+  doesn't exist for ESM entry points - this doesn't affect file scanning or breakpoint placement,
+  which are directory-based, not `require.main`-based.
+- `cluster.fork()` worker processes inherit `NODE_OPTIONS` from the parent automatically and are instrumented correctly. Manually-spawned `worker_threads`, however, do **not** inherit the parent's environment unless the application explicitly passes `env: process.env` when creating the worker - this is a Node.js platform behavior, not something the operator can patch around.
+- The Lightrun Node.js agent requires **Node.js 18+** (`engines.node` in the agent's `package.json`).
 - **Ambiguous filenames in monorepos/bundled output**: if two files share the same relative suffix, breakpoint placement can fail with a "more than one possible match" error. Use the agent's `appPathRelativeToRepository`/`pathResolver` config (via `agentConfig`) to disambiguate - relevant here since `containerSelector` targets one container/service at a time, which is exactly the shape where this can occur.
-- Process managers (pm2, nodemon) haven't been specifically validated - both inherit environment variables into spawned child processes by default, so `NODE_OPTIONS` propagation is expected to work the same way it does for `cluster.fork()`, but this hasn't been tested end-to-end.
